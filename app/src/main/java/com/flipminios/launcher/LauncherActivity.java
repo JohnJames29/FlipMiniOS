@@ -1,7 +1,6 @@
 package com.flipminios.launcher;
 
 import android.Manifest;
-import android.accessibilityservice.AccessibilityService;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.content.Intent;
@@ -13,10 +12,15 @@ import android.hardware.camera2.CameraManager;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Display;
+import android.view.DisplayCutout;
+import android.view.WindowInsets;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -24,6 +28,7 @@ import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.GridView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -36,11 +41,19 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Compact, rootless launcher with an editable quick panel and app drawer. */
 public final class LauncherActivity extends Activity {
     private static final String[] ALL_TILES = {"Internet", "Bluetooth", "Torch", "Rotation", "Sound", "Settings"};
     private final List<AppRepository.Entry> installed = new ArrayList<>();
+    private final ExecutorService appQuery = Executors.newSingleThreadExecutor();
+    private final Handler mainThread = new Handler(Looper.getMainLooper());
+    private IconLoader iconLoader;
+    private boolean querying = false;
+    private long lastAppLoad = 0;
+    private LinearLayout navBar;
     private LinearLayout outer;
     private FrameLayout content;
     private String page = "home";
@@ -57,18 +70,35 @@ public final class LauncherActivity extends Activity {
                     View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
-        installed.addAll(AppRepository.load(this));
+        iconLoader = new IconLoader(this);
         page = getIntent().getStringExtra("page") == null ? "home" : getIntent().getStringExtra("page");
         buildShell();
         showPage(page);
+        refreshAppsIfNeeded(true);
     }
     @Override protected void onResume() {
         super.onResume();
-        if (content != null) {
-            installed.clear();
-            installed.addAll(AppRepository.load(this));
-            showPage(page);
-        }
+        refreshAppsIfNeeded(false);
+    }
+    private void refreshAppsIfNeeded(boolean first) {
+        if (querying || (!first && SystemClock.elapsedRealtime() - lastAppLoad < 180000L)) return;
+        querying = true;
+        appQuery.execute(() -> {
+            List<AppRepository.Entry> result = AppRepository.load(getApplicationContext());
+            mainThread.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                installed.clear();
+                installed.addAll(result);
+                lastAppLoad = SystemClock.elapsedRealtime();
+                querying = false;
+                showPage(page);
+            });
+        });
+    }
+    @Override protected void onDestroy() {
+        appQuery.shutdownNow();
+        if (iconLoader != null) iconLoader.shutdown();
+        super.onDestroy();
     }
     @Override public void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -85,29 +115,37 @@ public final class LauncherActivity extends Activity {
         outer.setBackgroundColor(Ui.BG);
         content = new FrameLayout(this);
         outer.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
-        outer.addView(navigation(), Ui.lp(this, -1, 56));
+        navBar = navigation();
+        outer.addView(navBar, Ui.lp(this, -1, 57));
         setContentView(outer);
     }
     private LinearLayout navigation() {
         LinearLayout line = Ui.horizontal(this);
-        line.setPadding(Ui.dp(this, 6), Ui.dp(this, 4), Ui.dp(this, 6), Ui.dp(this, 6));
+        line.setPadding(Ui.dp(this, 5), Ui.dp(this, 3), Ui.dp(this, 5), Ui.dp(this, 6));
+        return line;
+    }
+    private void updateNavigation() {
+        if (navBar == null) return;
+        navBar.removeAllViews();
         String[][] tabs = {{"home", "⌂", "Home"}, {"apps", "▦", "Apps"},
                 {"controls", "☷", "Panel"}, {"settings", "⚙", "Edit"}};
         for (String[] tab : tabs) {
-            TextView item = Ui.text(this, tab[1] + "\n" + tab[2], 12, true, Ui.TEXT);
+            boolean selected = page.equals(tab[0]);
+            TextView item = Ui.text(this, tab[1] + "\n" + tab[2], 12, selected,
+                    selected ? Ui.TEXT : Ui.MUTED);
             item.setGravity(Gravity.CENTER);
-            item.setBackground(Ui.rounded(Ui.CARD, Ui.dp(this, 11)));
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
-            p.setMargins(Ui.dp(this, 3), 0, Ui.dp(this, 3), 0);
-            line.addView(item, p);
+            item.setBackground(selected ? Ui.glass(this, 15) : Ui.rounded(0xff151c2c, Ui.dp(this, 15)));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -1, 1);
+            params.setMargins(Ui.dp(this, 3), 0, Ui.dp(this, 3), 0);
+            navBar.addView(item, params);
             item.setOnClickListener(v -> showPage(tab[0]));
         }
-        return line;
     }
     private void showPage(String requested) {
         page = requested;
         if (content == null) return;
         content.removeAllViews();
+        updateNavigation();
         switch (page) {
             case "apps": showApps(); break;
             case "controls": showControls(); break;
@@ -123,9 +161,53 @@ public final class LauncherActivity extends Activity {
         content.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         return scroll;
     }
+    private boolean coverDisplay() {
+        return getDisplay() != null && getDisplay().getDisplayId() != Display.DEFAULT_DISPLAY;
+    }
+    private int safeCameraHeight() {
+        int height = Prefs.cameraHeight(this);
+        WindowInsets insets = getWindow().getDecorView().getRootWindowInsets();
+        if (insets != null) {
+            DisplayCutout cutout = insets.getDisplayCutout();
+            if (cutout != null) {
+                for (android.graphics.Rect region : cutout.getBoundingRects()) {
+                    height = Math.max(height, Math.min(140,
+                            Math.round(region.bottom / getResources().getDisplayMetrics().density) + 8));
+                }
+            }
+        }
+        return height;
+    }
+    /** Reserve the camera corner on every page, not just the home screen. */
+    private void addCoverShelf(LinearLayout column) {
+        if (!coverDisplay()) return;
+        LinearLayout shelf = Ui.horizontal(this);
+        shelf.setGravity(Gravity.BOTTOM);
+        TextView spacer = Ui.text(this, "", 10, false, Ui.TEXT);
+        LinearLayout status = Ui.vertical(this);
+        status.setGravity(Gravity.BOTTOM | (Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT));
+        TextView eyebrow = Ui.text(this, "COVER  /  MINI OS", 9, true, Ui.PRIMARY);
+        eyebrow.setGravity(Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT);
+        status.addView(eyebrow);
+        TextView clock = Ui.text(this, new SimpleDateFormat("h:mm", Locale.getDefault()).format(new Date()), 23, true, Ui.TEXT);
+        clock.setGravity(Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT);
+        status.addView(clock);
+        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -1, 56);
+        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -1, 44);
+        if (Prefs.camerasOnRight(this)) {
+            shelf.addView(status, right);
+            shelf.addView(spacer, left);
+        } else {
+            shelf.addView(spacer, left);
+            shelf.addView(status, right);
+        }
+        column.addView(shelf, Ui.lp(this, -1, safeCameraHeight()));
+        column.addView(new View(this), Ui.lp(this, 1, 6));
+    }
     private LinearLayout pageColumn() {
         LinearLayout column = Ui.vertical(this);
-        column.setPadding(Ui.dp(this, 12), Ui.dp(this, 8), Ui.dp(this, 12), Ui.dp(this, 14));
+        column.setPadding(Ui.dp(this, 13), Ui.dp(this, 5), Ui.dp(this, 13), Ui.dp(this, 16));
+        addCoverShelf(column);
         return column;
     }
     private TextView heading(String text) {
@@ -136,23 +218,13 @@ public final class LauncherActivity extends Activity {
     private void showHome() {
         LinearLayout column = pageColumn();
         scrolling(column);
-        LinearLayout header = Ui.horizontal(this);
-        // Keep the camera cut-outs clear: status text is deliberately placed on the right.
-        TextView cameraSpace = Ui.text(this, "", 10, false, Ui.TEXT);
-        header.addView(cameraSpace, new LinearLayout.LayoutParams(0, Ui.dp(this, 83), 1));
-        LinearLayout summary = Ui.vertical(this);
-        summary.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
-        String time = new SimpleDateFormat("h:mm", Locale.getDefault()).format(new Date());
-        String date = new SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(new Date());
-        TextView clock = Ui.text(this, time, 32, true, Ui.TEXT);
-        clock.setGravity(Gravity.RIGHT);
-        summary.addView(clock);
-        TextView dateLabel = Ui.text(this, date, 12, false, Ui.MUTED);
-        dateLabel.setGravity(Gravity.RIGHT);
-        summary.addView(dateLabel);
-        header.addView(summary, new LinearLayout.LayoutParams(0, -1, 1));
-        column.addView(header);
-        column.addView(heading("Flip Mini OS"));
+        if (!coverDisplay()) {
+            TextView welcome = Ui.text(this,
+                    new SimpleDateFormat("EEE  •  h:mm a", Locale.getDefault()).format(new Date()),
+                    12, true, Ui.PRIMARY);
+            column.addView(welcome);
+        }
+        column.addView(heading("Your mini home"));
         TextView hint = Ui.text(this, "Long-press an app to pin it here.", 12, false, Ui.MUTED);
         column.addView(hint);
         addSpace(column, 12);
@@ -174,42 +246,52 @@ public final class LauncherActivity extends Activity {
         LinearLayout shortRow = Ui.horizontal(this);
         addWeighted(shortRow, Ui.makeTile(this, "Controls", "☷", () -> showPage("controls")));
         addWeighted(shortRow, Ui.makeTile(this, "All apps", "▦", () -> showPage("apps")));
-        addWeighted(shortRow, Ui.makeTile(this, "Back", "‹", () -> global(AccessibilityService.GLOBAL_ACTION_BACK)));
+        addWeighted(shortRow, Ui.makeTile(this, "Customize", "⚙", () -> showPage("settings")));
         column.addView(shortRow, Ui.lp(this, -1, 78));
     }
     private void showApps() {
         LinearLayout column = pageColumn();
         content.addView(column, new FrameLayout.LayoutParams(-1, -1));
-        column.addView(heading("All apps"));
+        column.addView(heading("All your apps"));
         EditText search = new EditText(this);
         search.setSingleLine(true);
         search.setTextSize(14);
         search.setTextColor(Ui.TEXT);
         search.setHintTextColor(Ui.MUTED);
-        search.setHint("Search installed apps");
-        search.setPadding(Ui.dp(this, 13), Ui.dp(this, 7), Ui.dp(this, 13), Ui.dp(this, 7));
-        search.setBackground(Ui.rounded(Ui.CARD, Ui.dp(this, 15)));
-        column.addView(search, Ui.lp(this, -1, 45));
+        search.setHint("Search apps");
+        search.setPadding(Ui.dp(this, 14), Ui.dp(this, 7), Ui.dp(this, 14), Ui.dp(this, 7));
+        search.setBackground(Ui.glass(this, 16));
+        column.addView(search, Ui.lp(this, -1, 46));
         addSpace(column, 10);
-        FrameLayout listRegion = new FrameLayout(this);
-        column.addView(listRegion, new LinearLayout.LayoutParams(-1, 0, 1));
-        Runnable update = () -> {
-            listRegion.removeAllViews();
-            ScrollView scroll = new ScrollView(this);
-            LinearLayout list = Ui.vertical(this);
-            List<AppRepository.Entry> filtered = new ArrayList<>();
-            String needle = search.getText().toString().toLowerCase(Locale.ROOT);
-            for (AppRepository.Entry e : installed) if (e.name.toLowerCase(Locale.ROOT).contains(needle)) filtered.add(e);
-            makeAppGrid(list, filtered);
-            scroll.addView(list);
-            listRegion.addView(scroll);
-        };
+        AppGridAdapter adapter = new AppGridAdapter(this, installed, iconLoader);
+        GridView grid = new GridView(this);
+        grid.setNumColumns(Prefs.columns(this));
+        grid.setVerticalSpacing(Ui.dp(this, 3));
+        grid.setHorizontalSpacing(Ui.dp(this, 3));
+        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        grid.setClipToPadding(false);
+        grid.setPadding(0, 0, 0, Ui.dp(this, 16));
+        grid.setSelector(android.R.color.transparent);
+        grid.setAdapter(adapter);
+        grid.setOnItemClickListener((parent, view, position, id) -> launch(adapter.item(position)));
+        grid.setOnItemLongClickListener((parent, view, position, id) -> {
+            AppRepository.Entry entry = adapter.item(position);
+            Prefs.toggleFavorite(this, entry.id());
+            toast(Prefs.isFavorite(this, entry.id()) ? "Pinned to home" : "Removed from home");
+            return true;
+        });
+        column.addView(grid, new LinearLayout.LayoutParams(-1, 0, 1));
+        if (installed.isEmpty()) {
+            TextView wait = Ui.text(this, "Loading your apps…", 11, false, Ui.MUTED);
+            column.addView(wait);
+        }
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { update.run(); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                adapter.filter(s.toString());
+            }
             public void afterTextChanged(Editable e) {}
         });
-        update.run();
     }
     private void makeAppGrid(LinearLayout into, List<AppRepository.Entry> apps) {
         int cols = Prefs.columns(this);
@@ -222,7 +304,7 @@ public final class LauncherActivity extends Activity {
             item.setGravity(Gravity.CENTER);
             item.setPadding(Ui.dp(this, 3), Ui.dp(this, 10), Ui.dp(this, 3), Ui.dp(this, 6));
             ImageView image = new ImageView(this);
-            image.setImageDrawable(app.icon);
+            iconLoader.bind(image, app);
             LinearLayout.LayoutParams img = Ui.lp(this, 40, 40);
             img.gravity = Gravity.CENTER;
             item.addView(image, img);
@@ -368,11 +450,6 @@ public final class LauncherActivity extends Activity {
             toast(enabled ? "System auto-rotate off" : "System auto-rotate on");
         } catch (SecurityException ex) { toast("Rotation change blocked by system"); }
     }
-    private void global(int action) {
-        if (!CoverAccessibilityService.action(action)) {
-            toast("Enable optional Accessibility navigation in Edit first");
-        }
-    }
     private void showSettings() {
         LinearLayout column = pageColumn();
         scrolling(column);
@@ -408,60 +485,44 @@ public final class LauncherActivity extends Activity {
                 column.addView(add, p);
             }
         }
-        addSpace(column, 14);
-        column.addView(heading("Navigation and Reels"));
-        TextView access = Ui.pill(this, "Enable Accessibility navigation", () -> safeSettings(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        column.addView(access, Ui.lp(this, -1, 45));
-        addSpace(column, 7);
-        Switch navDock = new Switch(this);
-        navDock.setText("Floating Back / Home / Recents on the cover");
-        navDock.setTextSize(12);
-        navDock.setTextColor(Ui.TEXT);
-        navDock.setChecked(Prefs.navigationDockEnabled(this));
-        navDock.setOnCheckedChangeListener((button, enabled) -> {
-            Prefs.setNavigationDock(this, enabled);
-            toast("Accessibility service needed. The dock appears in other cover-screen apps.");
-        });
-        column.addView(navDock);
-        addSpace(column, 7);
-        Switch video = new Switch(this);
-        video.setText("TikTok / Instagram mini toolbar");
-        video.setTextSize(12);
-        video.setTextColor(Ui.TEXT);
-        video.setChecked(Prefs.overlayEnabled(this));
-        video.setOnCheckedChangeListener((button, enabled) -> {
-            Prefs.setOverlay(this, enabled);
-            if (enabled) toast("Enable Accessibility service and relaunch TikTok on the cover");
-        });
-        column.addView(video);
-        addSpace(column, 7);
-        LinearLayout sideRow = Ui.horizontal(this);
-        TextView leftSide = Ui.pill(this, "Toolbar left", () -> { Prefs.setOverlayOnRight(this, false); toast("Left side selected. Relaunch video app."); });
-        TextView rightSide = Ui.pill(this, "Toolbar right", () -> { Prefs.setOverlayOnRight(this, true); toast("Right side selected. Relaunch video app."); });
-        addWeighted(sideRow, leftSide);
-        addWeighted(sideRow, rightSide);
-        column.addView(sideRow, Ui.lp(this, -1, 43));
-        addSpace(column, 7);
-        column.addView(Ui.text(this,
-                "Optional: a camera-side overlay appears only when TikTok/Instagram runs on the secondary display. Swipe works through Android gestures; Like, Comment, Share need accessible app controls. Touch controls may be blocked by One UI or app updates.",
-                12, false, Ui.MUTED));
-        addSpace(column, 12);
-        column.addView(Ui.pill(this, "Close video toolbar", () -> {
-            Prefs.setOverlay(this, false);
-            toast("Toolbar disabled. Reopen app to dismiss it.");
-            showPage("settings");
-        }), Ui.lp(this, -1, 43));
-        addSpace(column, 14);
-        column.addView(heading("Navigation"));
-        LinearLayout nav = Ui.horizontal(this);
-        addWeighted(nav, Ui.makeTile(this, "Back", "‹", () -> global(AccessibilityService.GLOBAL_ACTION_BACK)));
-        addWeighted(nav, Ui.makeTile(this, "Home", "⌂", () -> global(AccessibilityService.GLOBAL_ACTION_HOME)));
-        addWeighted(nav, Ui.makeTile(this, "Recents", "▣", () -> global(AccessibilityService.GLOBAL_ACTION_RECENTS)));
-        column.addView(nav, Ui.lp(this, -1, 70));
         addSpace(column, 15);
-        column.addView(Ui.text(this, "For video apps: original accounts and apps stay intact. 9:16 forcing is not available without Samsung window-management support.", 11, false, Ui.MUTED));
+        column.addView(heading("Cover camera clearance"));
+        column.addView(Ui.text(this,
+                "Everything stays below the camera zone. Adjust clearance if your wallpaper or camera cutouts differ.",
+                12, false, Ui.MUTED));
+        addSpace(column, 6);
+        LinearLayout sides = Ui.horizontal(this);
+        addWeighted(sides, Ui.pill(this, "Cameras left", () -> {
+            Prefs.setCamerasOnRight(this, false); showPage("settings");
+        }));
+        addWeighted(sides, Ui.pill(this, "Cameras right", () -> {
+            Prefs.setCamerasOnRight(this, true); showPage("settings");
+        }));
+        column.addView(sides, Ui.lp(this, -1, 44));
         addSpace(column, 8);
-        column.addView(Ui.text(this, "Root-free • No analytics • No network permission • Source available", 11, false, Ui.MUTED));
+        TextView clearance = Ui.text(this, "Clearance: " + Prefs.cameraHeight(this) + " dp", 12, true, Ui.TEXT);
+        column.addView(clearance);
+        SeekBar height = new SeekBar(this);
+        height.setMax(72);
+        height.setProgress(Prefs.cameraHeight(this) - 68);
+        height.setOnSeekBarChangeListener(simpleSlider(value -> {
+            Prefs.setCameraHeight(this, value + 68);
+            clearance.setText("Clearance: " + Prefs.cameraHeight(this) + " dp (reopen page to apply)");
+        }));
+        column.addView(height);
+        addSpace(column, 10);
+        column.addView(Ui.pill(this, "Refresh app list", () -> {
+            lastAppLoad = 0;
+            refreshAppsIfNeeded(true);
+            toast("Refreshing in background");
+        }), Ui.lp(this, -1, 45));
+        addSpace(column, 15);
+        column.addView(heading("App compatibility"));
+        column.addView(Ui.text(this,
+                "Lite build: accessibility navigation and TikTok/Reels toolbar remain disabled to avoid the sensitive-installation warning. Original video apps are unchanged; no root needed.",
+                12, false, Ui.MUTED));
+        addSpace(column, 10);
+        column.addView(Ui.text(this, "V0.3 • Faster grid • Cover safe zone • Glass widget styling", 11, false, Ui.PRIMARY));
     }
     private void moveTile(String tile, int change) {
         List<String> next = Prefs.tiles(this);

@@ -14,18 +14,25 @@ import android.widget.TextView;
 
 /** Small dependency-free view helpers so the project can build without third-party UI libraries. */
 final class Ui {
-    static final int BG = 0xff0b1020;
-    static final int CARD = 0xff1b2336;
-    static final int PRIMARY = 0xffb9c4ff;
-    static final int TEXT = 0xfff4f6ff;
-    static final int MUTED = 0xffa9b4ce;
-    static final int ACCENT = 0xff5669c7;
+    static final int BG = 0xff0a0e19;
+    static final int CARD = 0xff202b40;
+    static final int PRIMARY = 0xffb7e3fa;
+    static final int TEXT = 0xfff4f8ff;
+    static final int MUTED = 0xffa8b7cd;
+    static final int ACCENT = 0xff35577a;
 
     static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
     static GradientDrawable rounded(int color, int radiusPx) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
         d.setCornerRadius(radiusPx);
+        return d;
+    }
+    static GradientDrawable glass(Context c, int radiusDp) {
+        GradientDrawable d = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xff283c54, 0xff172337});
+        d.setCornerRadius(dp(c, radiusDp));
+        d.setStroke(dp(c, 1), 0xff425b78);
         return d;
     }
     static LinearLayout vertical(Context c) {
@@ -56,7 +63,7 @@ final class Ui {
         TextView v = text(c, value, 13, true, TEXT);
         v.setGravity(Gravity.CENTER);
         v.setPadding(dp(c, 10), dp(c, 10), dp(c, 10), dp(c, 10));
-        v.setBackground(rounded(CARD, dp(c, 16)));
+        v.setBackground(glass(c, 16));
         v.setOnClickListener(view -> onClick.run());
         return v;
     }
@@ -64,7 +71,7 @@ final class Ui {
         LinearLayout holder = vertical(c);
         holder.setGravity(Gravity.CENTER);
         holder.setPadding(dp(c, 4), dp(c, 12), dp(c, 4), dp(c, 12));
-        holder.setBackground(rounded(CARD, dp(c, 17)));
+        holder.setBackground(glass(c, 18));
         TextView icon = text(c, symbol, 22, true, PRIMARY);
         icon.setGravity(Gravity.CENTER);
         holder.addView(icon);

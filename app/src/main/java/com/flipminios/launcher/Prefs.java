@@ -15,6 +15,10 @@ final class Prefs {
     static void setOverlayOnRight(Context c, boolean yes) { store(c).edit().putBoolean("overlayOnRight", yes).apply(); }
     static boolean navigationDockEnabled(Context c) { return store(c).getBoolean("navigation_dock", false); }
     static void setNavigationDock(Context c, boolean enabled) { store(c).edit().putBoolean("navigation_dock", enabled).apply(); }
+    static int cameraHeight(Context c) { return Math.max(68, Math.min(140, store(c).getInt("camera_height", 94))); }
+    static void setCameraHeight(Context c, int height) { store(c).edit().putInt("camera_height", Math.max(68, Math.min(140, height))).apply(); }
+    static boolean camerasOnRight(Context c) { return store(c).getBoolean("camera_right", false); }
+    static void setCamerasOnRight(Context c, boolean right) { store(c).edit().putBoolean("camera_right", right).apply(); }
     static int columns(Context c) { return store(c).getInt("columns", 3); }
     static void setColumns(Context c, int n) { store(c).edit().putInt("columns", Math.max(2, Math.min(4, n))).apply(); }
     static List<String> tiles(Context c) {
