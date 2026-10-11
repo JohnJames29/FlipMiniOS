@@ -57,6 +57,7 @@ public final class LauncherActivity extends Activity {
     private final ExecutorService appQuery = Executors.newSingleThreadExecutor();
     private final Handler mainThread = new Handler(Looper.getMainLooper());
     private IconLoader iconLoader;
+    private CoverShizukuControl shizukuControl;
     private boolean querying = false;
     private long lastAppLoad = 0;
     private LinearLayout navBar;
@@ -77,6 +78,7 @@ public final class LauncherActivity extends Activity {
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
         iconLoader = new IconLoader(this);
+        shizukuControl = new CoverShizukuControl(this);
         page = getIntent().getStringExtra("page") == null ? "home" : getIntent().getStringExtra("page");
         buildShell();
         showPage(page);
@@ -111,6 +113,7 @@ public final class LauncherActivity extends Activity {
     @Override protected void onDestroy() {
         appQuery.shutdownNow();
         if (iconLoader != null) iconLoader.shutdown();
+        if (shizukuControl != null) shizukuControl.close();
         super.onDestroy();
     }
     @Override public void onNewIntent(Intent intent) {
@@ -536,29 +539,66 @@ public final class LauncherActivity extends Activity {
                 .setNegativeButton("Cancel", null)
                 .show();
     }
-    /** Experimental window bounds may be ignored on the Z Flip6 cover. */
-    private void testVideoWindow(String packageName) {
-        if (!coverDisplay()) { toast("Open this from the cover screen"); return; }
-        AppRepository.Entry found = null;
-        for (AppRepository.Entry entry : installed) {
-            if (packageName.equals(entry.component.getPackageName())) {
-                found = entry;
+    /**
+     * Uses Shizuku's shell identity to temporarily request a smaller UI scale
+     * on display 1. Never changes system resolution and always launches the
+     * original application through the normal Samsung cover display path.
+     */
+    private void showCompactVideoProfile(String packageName) {
+        if (!coverDisplay()) {
+            toast("Open this from your cover screen");
+            return;
+        }
+        AppRepository.Entry entry = null;
+        for (AppRepository.Entry candidate : installed) {
+            if (packageName.equals(candidate.component.getPackageName())) {
+                entry = candidate;
                 break;
             }
         }
-        if (found == null) { toast("Original app not found in app drawer"); return; }
-        final AppRepository.Entry chosen = found;
-        boolean freeform = getPackageManager().hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT);
+        if (entry == null) {
+            toast("Native app not found; refresh your app list");
+            return;
+        }
+        final AppRepository.Entry originalApp = entry;
         new AlertDialog.Builder(this)
-                .setTitle("Experimental 9:16 launch")
-                .setMessage("This opens the ORIGINAL " + chosen.name +
-                        " and asks Android for a 9:16 window on the right, away from the cameras.\n\n" +
-                        (freeform ? "Freeform is reported, but Samsung may still reject it on the cover." :
-                                "This device does not report freeform window support, so Android will likely ignore the request.") +
-                        "\n\nThe native app and account remain unchanged. This is only a one-time test.")
-                .setPositiveButton("Try once", (d, w) -> launch(chosen, true))
-                .setNegativeButton("Cancel", null)
-                .show();
+                .setTitle("Compact video mode · 90 seconds")
+                .setMessage("Experimental, rootless Shizuku option. It temporarily requests 280 dpi " +
+                        "only for the external display (your original is 340 dpi) to make the native " +
+                        "app's buttons potentially smaller. Your existing " + entry.name +
+                        " app, account and feed stay untouched.\n\n" +
+                        "The display is automatically reset after 90 seconds if the watchdog remains running. " +
+                        "Samsung may ignore the request or scale things incorrectly. " +
+                        "If the cover becomes misaligned, restore with aShell: wm density -d 1 reset.")
+                .setPositiveButton("Try compact mode", (dialog, which) -> {
+                    shizukuControl.execute(CoverShellService.COMPACT, response -> {
+                        if (response.startsWith("Compact cover density requested:")) {
+                            toast("Compact mode is temporary. Restores in 90 seconds.");
+                            launch(originalApp);
+                        } else {
+                            new AlertDialog.Builder(this)
+                                    .setTitle("No changes applied")
+                                    .setMessage(response)
+                                    .setPositiveButton("OK", null).show();
+                        }
+                    });
+                })
+                .setNegativeButton("Cancel", null).show();
+    }
+    private void showDisplayStatus() {
+        shizukuControl.execute(CoverShellService.INSPECT, response ->
+                new AlertDialog.Builder(this)
+                        .setTitle("Cover display status")
+                        .setMessage(response)
+                        .setPositiveButton("OK", null).show());
+    }
+    private void restoreCoverDensity() {
+        shizukuControl.execute(CoverShellService.RESTORE, response ->
+                new AlertDialog.Builder(this)
+                        .setTitle("Reset cover display")
+                        .setMessage(response + "\n\nOriginal density: 340 dpi, resolution: 748×720. " +
+                                "If Shizuku is unavailable, use aShell You: wm density -d 1 reset")
+                        .setPositiveButton("OK", null).show());
     }
     private void showSettings() {
         LinearLayout column = pageColumn();
@@ -627,24 +667,30 @@ public final class LauncherActivity extends Activity {
             toast("Refreshing in background");
         }), Ui.lp(this, -1, 45));
         addSpace(column, 15);
-        column.addView(heading("Experimental native video fit"));
+        column.addView(heading("Advanced cover video (Shizuku)"));
         column.addView(Ui.text(this,
-                "Keep your original TikTok/Instagram. Request a narrower 9:16 window once. " +
-                "Samsung may ignore the window request entirely. Regular app launching remains unchanged.",
+                "Optional, temporary compact display scale for the ORIGINAL TikTok and Instagram. " +
+                "No root. Restores after 90 seconds. May not fix app-controlled clipping.",
                 12, false, Ui.MUTED));
         addSpace(column, 6);
-        column.addView(Ui.pill(this, "Test TikTok 9:16",
-                () -> testVideoWindow("com.zhiliaoapp.musically")), Ui.lp(this, -1, 40));
+        column.addView(Ui.pill(this, "Compact TikTok · 90 sec",
+                () -> showCompactVideoProfile("com.zhiliaoapp.musically")), Ui.lp(this, -1, 40));
         addSpace(column, 5);
-        column.addView(Ui.pill(this, "Test Instagram 9:16",
-                () -> testVideoWindow("com.instagram.android")), Ui.lp(this, -1, 40));
+        column.addView(Ui.pill(this, "Compact Instagram · 90 sec",
+                () -> showCompactVideoProfile("com.instagram.android")), Ui.lp(this, -1, 40));
+        addSpace(column, 5);
+        column.addView(Ui.pill(this, "Display status (read only)", this::showDisplayStatus),
+                Ui.lp(this, -1, 40));
+        addSpace(column, 5);
+        column.addView(Ui.pill(this, "Restore normal 340 dpi", this::restoreCoverDensity),
+                Ui.lp(this, -1, 40));
         addSpace(column, 12);
         column.addView(heading("App compatibility"));
         column.addView(Ui.text(this,
-                "TikTok and Instagram use their own layout. Android does not let a regular launcher relocate their buttons or force a 9:16 window. Keep the real apps through MultiStar; resizing remains experimental.",
+                "The new compact video mode asks Shizuku to adjust only the cover display DPI temporarily. It cannot move controls drawn inside TikTok or Instagram; Samsung may still clip them.",
                 12, false, Ui.MUTED));
         addSpace(column, 10);
-        column.addView(Ui.text(this, "V0.3 • Faster grid • Cover safe zone • Glass widget styling", 11, false, Ui.PRIMARY));
+        column.addView(Ui.text(this, "V0.6 • Rootless • Automatic DPI rollback • Original apps", 11, false, Ui.PRIMARY));
     }
     private void moveTile(String tile, int change) {
         List<String> next = Prefs.tiles(this);
