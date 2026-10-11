@@ -25,6 +25,7 @@ final class CoverShizukuControl {
     private int pendingCode;
     private Consumer<String> pending;
     private boolean closed;
+    private boolean listenerRegistered;
 
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder service) {
@@ -54,7 +55,13 @@ final class CoverShizukuControl {
         args = new Shizuku.UserServiceArgs(
                 new ComponentName(activity.getPackageName(), CoverShellService.class.getName()))
                 .processNameSuffix("cover_shell").daemon(true).version(1);
-        Shizuku.addRequestPermissionResultListener(permissionListener);
+        // The normal launcher must work even when the Shizuku app is absent.
+        try {
+            Shizuku.addRequestPermissionResultListener(permissionListener);
+            listenerRegistered = true;
+        } catch (Throwable ignored) {
+            listenerRegistered = false;
+        }
     }
 
     void execute(int code, Consumer<String> result) {
@@ -128,7 +135,10 @@ final class CoverShizukuControl {
 
     void close() {
         closed = true;
-        Shizuku.removeRequestPermissionResultListener(permissionListener);
+        if (listenerRegistered) {
+            try { Shizuku.removeRequestPermissionResultListener(permissionListener); }
+            catch (Throwable ignored) {}
+        }
         // A daemon user service remains alive for the safety timer; no destructive unbind.
         background.shutdown();
         remote = null;
