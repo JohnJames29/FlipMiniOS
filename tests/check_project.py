@@ -53,6 +53,23 @@ print('v0.4 compact layout and control-dialog checks passed')
 ui = (root / 'app/src/main/java/com/flipminios/launcher/Ui.java').read_text()
 assert 'SpannableString' in ui and 'setMaxLines(2)' in ui
 assert 'showSystemRotationOptions' in launcher and 'Settings.System.canWrite' in launcher
-assert 'testVideoWindow' in launcher and 'setLaunchBounds' in launcher
+assert 'showCompactVideoProfile' in launcher
+assert 'CoverShizukuControl' in launcher
 assert 'Ui.lp(this, -1, 72)' in launcher
 print('v0.5 compact tiles, system rotation, native-app experimental window checks passed')
+
+# v0.6 Shizuku safety invariants
+service = (root / 'app/src/main/java/com/flipminios/launcher/CoverShellService.java').read_text()
+bridge = (root / 'app/src/main/java/com/flipminios/launcher/CoverShizukuControl.java').read_text()
+build = (root / 'app/build.gradle').read_text()
+assert 'dev.rikka.shizuku:api:13.1.5' in build
+assert 'dev.rikka.shizuku:provider:13.1.5' in build
+assert 'versionName \'0.6.0\'' in build
+assert 'Physical size: 748x720' in service
+assert 'Physical density: 340' in service
+assert 'COMPACT_DPI = 280' in service
+assert 'SECONDS = 90' in service and 'restoreTimer.schedule' in service
+assert 'wm density -d 1 reset' in service
+assert 'requestPermission' in bridge and 'bindUserService' in bridge
+assert 'testVideoWindow(' not in launcher  # broken floating overlay removed
+print('v0.6 Shizuku safety and native-app fallback structural checks passed')
