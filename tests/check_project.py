@@ -11,7 +11,7 @@ assert 'android.permission.INTERNET' not in manifest
 assert 'android.permission.QUERY_ALL_PACKAGES' not in manifest
 assert 'android.permission.BIND_ACCESSIBILITY_SERVICE' not in manifest
 assert 'android.permission.ACCESS_NETWORK_STATE' in manifest
-assert 'android.permission.WRITE_SETTINGS' not in manifest
+assert 'android.permission.WRITE_SETTINGS' in manifest
 assert 'android:exported="true"' in manifest
 assert 'samsung_widget_info' in manifest
 print('Rootless Lite manifest and cover widget metadata: OK')
@@ -48,3 +48,11 @@ assert 'i += 3' in launcher  # compact control tiles
 assert 'camera_height_v4' in prefs
 assert 'camera_height", 94' not in prefs
 print('v0.4 compact layout and control-dialog checks passed')
+
+# v0.5 app controls and original-app portrait window experiment
+ui = (root / 'app/src/main/java/com/flipminios/launcher/Ui.java').read_text()
+assert 'SpannableString' in ui and 'setMaxLines(2)' in ui
+assert 'showSystemRotationOptions' in launcher and 'Settings.System.canWrite' in launcher
+assert 'testVideoWindow' in launcher and 'setLaunchBounds' in launcher
+assert 'Ui.lp(this, -1, 72)' in launcher
+print('v0.5 compact tiles, system rotation, native-app experimental window checks passed')
