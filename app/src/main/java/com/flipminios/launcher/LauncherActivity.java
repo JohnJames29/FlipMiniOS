@@ -9,6 +9,8 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.drawable.Drawable;
+import android.graphics.Rect;
+import android.util.DisplayMetrics;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.net.ConnectivityManager;
@@ -343,16 +345,23 @@ public final class LauncherActivity extends Activity {
         }
         into.addView(grid);
     }
-    private void launch(AppRepository.Entry app) {
+    private void launch(AppRepository.Entry app) { launch(app, false); }
+    private void launch(AppRepository.Entry app, boolean experimentalPortrait) {
         Intent intent = Intent.makeMainActivity(app.component);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
         try {
             int displayId = getDisplay() == null ? Display.DEFAULT_DISPLAY : getDisplay().getDisplayId();
             ActivityOptions options = ActivityOptions.makeBasic();
             options.setLaunchDisplayId(displayId);
+            if (experimentalPortrait && coverDisplay()) {
+                DisplayMetrics metrics = new DisplayMetrics();
+                getDisplay().getRealMetrics(metrics);
+                int h = metrics.heightPixels;
+                int w = Math.min(metrics.widthPixels, Math.round(h * 9f / 16f));
+                options.setLaunchBounds(new Rect(metrics.widthPixels - w, 0, metrics.widthPixels, h));
+            }
             startActivity(intent, options.toBundle());
         } catch (RuntimeException e) {
-            // Failing closed prevents an inaccessible activity opening on the broken inner display.
             Toast.makeText(this, "Cover launch blocked. Enable this app in Good Lock → MultiStar.", Toast.LENGTH_LONG).show();
         }
     }
@@ -369,7 +378,7 @@ public final class LauncherActivity extends Activity {
                 if (i + j < tiles.size()) addWeighted(row, quickTile(tiles.get(i + j)));
                 else row.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 1));
             }
-            LinearLayout.LayoutParams p = Ui.lp(this, -1, 60);
+            LinearLayout.LayoutParams p = Ui.lp(this, -1, 72);
             p.bottomMargin = Ui.dp(this, 6);
             column.addView(row, p);
         }
@@ -394,7 +403,7 @@ public final class LauncherActivity extends Activity {
         column.addView(volume);
         addSpace(column, 12);
         TextView note = Ui.text(this,
-                "Brightness affects Flip Mini OS only. Rotate controls only this launcher; Samsung may restrict rotation on its cover screen.",
+                "Brightness affects this app only. Rotate now offers app-only modes and an opt-in Android system auto-rotate setting.",
                 11, false, Ui.MUTED);
         column.addView(note);
     }
@@ -472,27 +481,82 @@ public final class LauncherActivity extends Activity {
                 .setNegativeButton("Close", null)
                 .show();
     }
-    /**
-     * Change the launcher activity's orientation instead of silently changing
-     * the global auto-rotate flag. Samsung may still lock secondary displays.
-     */
+    /** Local orientation, independent from opt-in system-wide rotation. */
     private void showRotationOptions() {
-        String[] modes = {"Auto (Flip Mini OS)", "Portrait (Flip Mini OS)", "Landscape (Flip Mini OS)"};
+        String[] modes = {"Auto (Flip Mini OS only)", "Portrait (Flip Mini OS only)",
+                "Landscape (Flip Mini OS only)", "System auto-rotate (other apps)"};
         new AlertDialog.Builder(this)
                 .setTitle("Rotation")
-                .setSingleChoiceItems(modes, Prefs.rotationMode(this), (dialog, selected) -> {
+                .setItems(modes, (dialog, selected) -> {
+                    if (selected == 3) { showSystemRotationOptions(); return; }
                     Prefs.setRotationMode(this, selected);
                     int orientation = selected == 0 ? ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
                             selected == 1 ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT :
                             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
                     try {
                         setRequestedOrientation(orientation);
-                        toast("Requested " + modes[selected] + ". Samsung may lock cover rotation.");
+                        toast("Requested: " + modes[selected]);
                     } catch (RuntimeException ex) {
-                        toast("Samsung blocked cover rotation");
+                        toast("Samsung blocked launcher rotation");
                     }
-                    dialog.dismiss();
+                }).setNegativeButton("Cancel", null).show();
+    }
+    private void showSystemRotationOptions() {
+        boolean enabled = Settings.System.getInt(getContentResolver(),
+                Settings.System.ACCELEROMETER_ROTATION, 0) != 0;
+        new AlertDialog.Builder(this)
+                .setTitle("System auto-rotate")
+                .setMessage("Currently: " + (enabled ? "On" : "Off") +
+                        "\n\nThis controls Android's auto-rotate preference for other apps that allow rotation. " +
+                        "It cannot override TikTok's orientation lock or Samsung's cover display policy.")
+                .setPositiveButton(enabled ? "Turn OFF" : "Turn ON", (dialog, which) -> {
+                    if (!Settings.System.canWrite(this)) {
+                        new AlertDialog.Builder(this)
+                                .setTitle("Permission required")
+                                .setMessage("Allow 'Modify system settings' for Flip Mini OS. " +
+                                        "Samsung may open this permission screen only on the main display; " +
+                                        "do not risk your damaged panel just to grant it.")
+                                .setPositiveButton("Open permission settings", (d, w) -> {
+                                    Intent i = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                                            Uri.parse("package:" + getPackageName()));
+                                    safeSettings(i);
+                                })
+                                .setNegativeButton("Cancel", null).show();
+                        return;
+                    }
+                    try {
+                        boolean wrote = Settings.System.putInt(getContentResolver(),
+                                Settings.System.ACCELEROMETER_ROTATION, enabled ? 0 : 1);
+                        toast(wrote ? "System auto-rotate " + (enabled ? "OFF" : "ON") :
+                                "Samsung rejected the setting");
+                    } catch (RuntimeException ex) {
+                        toast("System rotation change blocked");
+                    }
                 })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+    /** Experimental window bounds may be ignored on the Z Flip6 cover. */
+    private void testVideoWindow(String packageName) {
+        if (!coverDisplay()) { toast("Open this from the cover screen"); return; }
+        AppRepository.Entry found = null;
+        for (AppRepository.Entry entry : installed) {
+            if (packageName.equals(entry.component.getPackageName())) {
+                found = entry;
+                break;
+            }
+        }
+        if (found == null) { toast("Original app not found in app drawer"); return; }
+        final AppRepository.Entry chosen = found;
+        boolean freeform = getPackageManager().hasSystemFeature(PackageManager.FEATURE_FREEFORM_WINDOW_MANAGEMENT);
+        new AlertDialog.Builder(this)
+                .setTitle("Experimental 9:16 launch")
+                .setMessage("This opens the ORIGINAL " + chosen.name +
+                        " and asks Android for a 9:16 window on the right, away from the cameras.\n\n" +
+                        (freeform ? "Freeform is reported, but Samsung may still reject it on the cover." :
+                                "This device does not report freeform window support, so Android will likely ignore the request.") +
+                        "\n\nThe native app and account remain unchanged. This is only a one-time test.")
+                .setPositiveButton("Try once", (d, w) -> launch(chosen, true))
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -563,6 +627,18 @@ public final class LauncherActivity extends Activity {
             toast("Refreshing in background");
         }), Ui.lp(this, -1, 45));
         addSpace(column, 15);
+        column.addView(heading("Experimental native video fit"));
+        column.addView(Ui.text(this,
+                "Keep your original TikTok/Instagram. Request a narrower 9:16 window once. " +
+                "Samsung may ignore the window request entirely. Regular app launching remains unchanged.",
+                12, false, Ui.MUTED));
+        addSpace(column, 6);
+        column.addView(Ui.pill(this, "Test TikTok 9:16",
+                () -> testVideoWindow("com.zhiliaoapp.musically")), Ui.lp(this, -1, 40));
+        addSpace(column, 5);
+        column.addView(Ui.pill(this, "Test Instagram 9:16",
+                () -> testVideoWindow("com.instagram.android")), Ui.lp(this, -1, 40));
+        addSpace(column, 12);
         column.addView(heading("App compatibility"));
         column.addView(Ui.text(this,
                 "TikTok and Instagram use their own layout. Android does not let a regular launcher relocate their buttons or force a 9:16 window. Keep the real apps through MultiStar; resizing remains experimental.",
