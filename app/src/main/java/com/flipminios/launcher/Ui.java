@@ -11,6 +11,9 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.RelativeSizeSpan;
 
 /** Small dependency-free view helpers so the project can build without third-party UI libraries. */
 final class Ui {
@@ -67,18 +70,21 @@ final class Ui {
         v.setOnClickListener(view -> onClick.run());
         return v;
     }
+    /** A single bounded text view prevents control tile labels being clipped. */
     static LinearLayout makeTile(Context c, String label, String symbol, Runnable click) {
         LinearLayout holder = vertical(c);
         holder.setGravity(Gravity.CENTER);
-        holder.setPadding(dp(c, 4), dp(c, 12), dp(c, 4), dp(c, 12));
-        holder.setBackground(glass(c, 18));
-        TextView icon = text(c, symbol, 22, true, PRIMARY);
-        icon.setGravity(Gravity.CENTER);
-        holder.addView(icon);
-        TextView title = text(c, label, 11, true, TEXT);
-        title.setGravity(Gravity.CENTER);
-        title.setSingleLine(true);
-        holder.addView(title);
+        holder.setBackground(glass(c, 16));
+        TextView both = text(c, "", 12, true, TEXT);
+        both.setGravity(Gravity.CENTER);
+        both.setIncludeFontPadding(false);
+        both.setMaxLines(2);
+        both.setPadding(dp(c, 3), 0, dp(c, 3), 0);
+        both.setLineSpacing(0f, 1.0f);
+        SpannableString value = new SpannableString(symbol + "\n" + label);
+        value.setSpan(new RelativeSizeSpan(1.65f), 0, symbol.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        both.setText(value);
+        holder.addView(both, new LinearLayout.LayoutParams(-1, -1));
         holder.setContentDescription(label);
         holder.setOnClickListener(v -> click.run());
         return holder;
