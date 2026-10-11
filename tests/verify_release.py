@@ -25,5 +25,12 @@ assert '<queries>' in manifest
 print('Build workflow, features and security checks: passed')
 
 assert 'showSystemRotationOptions' in code
-assert 'setLaunchBounds' in code and 'testVideoWindow' in code
+assert 'showCompactVideoProfile' in code
+assert 'CoverShellService' in code and 'CoverShizukuControl' in code
 assert 'SpannableString' in code
+
+assert 'restoreTimer.schedule' in code
+assert 'wm density -d 1 reset' in code
+assert 'Physical density: 340' in code
+assert 'COMPACT_DPI = 280' in code
+assert 'testVideoWindow(' not in code
