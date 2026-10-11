@@ -34,3 +34,9 @@ assert 'wm density -d 1 reset' in code
 assert 'Physical density: 340' in code
 assert 'COMPACT_DPI = 280' in code
 assert 'testVideoWindow(' not in code
+
+manifest = (root/'app/src/main/AndroidManifest.xml').read_text()
+assert 'rikka.shizuku.ShizukuProvider' in manifest
+assert 'android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"' in manifest
+assert 'moe.shizuku.client.V3_SUPPORT' in manifest
+assert 'android:multiprocess="false"' in manifest
