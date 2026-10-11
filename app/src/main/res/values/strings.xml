@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Flip Mini OS</string>
+    <string name="accessibility_name">Flip Mini OS navigation and video controls</string>
+    <string name="accessibility_description">Optional cover screen controls for Back, Home, Recents and user-triggered TikTok and Instagram navigation. The service examines the active app’s accessible button labels only when a control is pressed. It does not store or transmit content.</string>
+</resources>
