@@ -16,7 +16,10 @@ assert 'setLaunchDisplayId' in code
 manifest = (root/'app/src/main/AndroidManifest.xml').read_text()
 for forbidden in ('QUERY_ALL_PACKAGES','android.permission.INTERNET','BIND_DEVICE_ADMIN','BIND_VPN_SERVICE'):
     assert forbidden not in manifest
-assert 'android.permission.WRITE_SETTINGS' in manifest
+assert 'android.permission.WRITE_SETTINGS' not in manifest
+assert 'android.permission.ACCESS_NETWORK_STATE' in manifest
+assert 'showInternetOptions' in code
+assert 'showRotationOptions' in code
 assert 'BIND_ACCESSIBILITY_SERVICE' not in manifest
 assert '<queries>' in manifest
 print('Build workflow, features and security checks: passed')
