@@ -3,12 +3,16 @@ package com.flipminios.launcher;
 import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityOptions;
+import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.drawable.Drawable;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -75,6 +79,13 @@ public final class LauncherActivity extends Activity {
         buildShell();
         showPage(page);
         refreshAppsIfNeeded(true);
+        applySavedRotation();
+    }
+    private void applySavedRotation() {
+        int mode = Prefs.rotationMode(this);
+        if (mode == 1) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        else if (mode == 2) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        // Leave the firmware's default orientation unchanged until the user selects Auto.
     }
     @Override protected void onResume() {
         super.onResume();
@@ -116,12 +127,12 @@ public final class LauncherActivity extends Activity {
         content = new FrameLayout(this);
         outer.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         navBar = navigation();
-        outer.addView(navBar, Ui.lp(this, -1, 57));
+        outer.addView(navBar, Ui.lp(this, -1, 49));
         setContentView(outer);
     }
     private LinearLayout navigation() {
         LinearLayout line = Ui.horizontal(this);
-        line.setPadding(Ui.dp(this, 5), Ui.dp(this, 3), Ui.dp(this, 5), Ui.dp(this, 6));
+        line.setPadding(Ui.dp(this, 5), Ui.dp(this, 2), Ui.dp(this, 5), Ui.dp(this, 4));
         return line;
     }
     private void updateNavigation() {
@@ -164,45 +175,48 @@ public final class LauncherActivity extends Activity {
     private boolean coverDisplay() {
         return getDisplay() != null && getDisplay().getDisplayId() != Display.DEFAULT_DISPLAY;
     }
+    /**
+     * Only the compact top shelf avoids the physical camera corner.
+     * v0.3 reserved up to 140dp and pushed the entire UI down.
+     * Some Samsung firmware reports oversized cutout bounds, so cap the inferred portion.
+     */
     private int safeCameraHeight() {
         int height = Prefs.cameraHeight(this);
         WindowInsets insets = getWindow().getDecorView().getRootWindowInsets();
-        if (insets != null) {
-            DisplayCutout cutout = insets.getDisplayCutout();
-            if (cutout != null) {
-                for (android.graphics.Rect region : cutout.getBoundingRects()) {
-                    height = Math.max(height, Math.min(140,
-                            Math.round(region.bottom / getResources().getDisplayMetrics().density) + 8));
-                }
+        if (coverDisplay() && insets != null && insets.getDisplayCutout() != null) {
+            for (android.graphics.Rect region : insets.getDisplayCutout().getBoundingRects()) {
+                int bottomDp = Math.round(region.bottom / getResources().getDisplayMetrics().density);
+                height = Math.max(height, Math.min(68, bottomDp + 5));
             }
         }
         return height;
     }
-    /** Reserve the camera corner on every page, not just the home screen. */
+    /** A short camera-safe header; the rest of each page uses the full display width. */
     private void addCoverShelf(LinearLayout column) {
         if (!coverDisplay()) return;
         LinearLayout shelf = Ui.horizontal(this);
-        shelf.setGravity(Gravity.BOTTOM);
-        TextView spacer = Ui.text(this, "", 10, false, Ui.TEXT);
+        shelf.setGravity(Gravity.CENTER_VERTICAL);
+        View cameraSpace = new View(this);
         LinearLayout status = Ui.vertical(this);
-        status.setGravity(Gravity.BOTTOM | (Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT));
-        TextView eyebrow = Ui.text(this, "COVER  /  MINI OS", 9, true, Ui.PRIMARY);
-        eyebrow.setGravity(Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        boolean camerasRight = Prefs.camerasOnRight(this);
+        TextView eyebrow = Ui.text(this, "FLIP / MINI", 9, true, Ui.PRIMARY);
+        TextView clock = Ui.text(this, new SimpleDateFormat("h:mm", Locale.getDefault()).format(new Date()), 20, true, Ui.TEXT);
+        int gravity = camerasRight ? Gravity.LEFT : Gravity.RIGHT;
+        eyebrow.setGravity(gravity);
+        clock.setGravity(gravity);
         status.addView(eyebrow);
-        TextView clock = Ui.text(this, new SimpleDateFormat("h:mm", Locale.getDefault()).format(new Date()), 23, true, Ui.TEXT);
-        clock.setGravity(Prefs.camerasOnRight(this) ? Gravity.LEFT : Gravity.RIGHT);
         status.addView(clock);
-        LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -1, 56);
-        LinearLayout.LayoutParams right = new LinearLayout.LayoutParams(0, -1, 44);
-        if (Prefs.camerasOnRight(this)) {
-            shelf.addView(status, right);
-            shelf.addView(spacer, left);
+        LinearLayout.LayoutParams cameraParams = new LinearLayout.LayoutParams(0, -1, 49);
+        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(0, -1, 51);
+        if (camerasRight) {
+            shelf.addView(status, statusParams);
+            shelf.addView(cameraSpace, cameraParams);
         } else {
-            shelf.addView(spacer, left);
-            shelf.addView(status, right);
+            shelf.addView(cameraSpace, cameraParams);
+            shelf.addView(status, statusParams);
         }
         column.addView(shelf, Ui.lp(this, -1, safeCameraHeight()));
-        column.addView(new View(this), Ui.lp(this, 1, 6));
     }
     private LinearLayout pageColumn() {
         LinearLayout column = Ui.vertical(this);
@@ -212,7 +226,7 @@ public final class LauncherActivity extends Activity {
     }
     private TextView heading(String text) {
         TextView title = Ui.text(this, text, 19, true, Ui.TEXT);
-        title.setPadding(Ui.dp(this, 3), Ui.dp(this, 8), Ui.dp(this, 3), Ui.dp(this, 12));
+        title.setPadding(Ui.dp(this, 3), Ui.dp(this, 3), Ui.dp(this, 3), Ui.dp(this, 7));
         return title;
     }
     private void showHome() {
@@ -261,7 +275,7 @@ public final class LauncherActivity extends Activity {
         search.setHint("Search apps");
         search.setPadding(Ui.dp(this, 14), Ui.dp(this, 7), Ui.dp(this, 14), Ui.dp(this, 7));
         search.setBackground(Ui.glass(this, 16));
-        column.addView(search, Ui.lp(this, -1, 46));
+        column.addView(search, Ui.lp(this, -1, 40));
         addSpace(column, 10);
         AppGridAdapter adapter = new AppGridAdapter(this, installed, iconLoader);
         GridView grid = new GridView(this);
@@ -348,13 +362,15 @@ public final class LauncherActivity extends Activity {
         column.addView(heading("Control center"));
         List<String> tiles = Prefs.tiles(this);
         if (tiles.isEmpty()) column.addView(Ui.text(this, "No quick tiles selected. Add them in Edit.", 13, false, Ui.MUTED));
-        for (int i = 0; i < tiles.size(); i += 2) {
+        // Three compact columns leave room for the sliders on the cover screen.
+        for (int i = 0; i < tiles.size(); i += 3) {
             LinearLayout row = Ui.horizontal(this);
-            addWeighted(row, quickTile(tiles.get(i)));
-            if (i + 1 < tiles.size()) addWeighted(row, quickTile(tiles.get(i + 1)));
-            else row.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 1));
-            LinearLayout.LayoutParams p = Ui.lp(this, -1, 79);
-            p.bottomMargin = Ui.dp(this, 8);
+            for (int j = 0; j < 3; j++) {
+                if (i + j < tiles.size()) addWeighted(row, quickTile(tiles.get(i + j)));
+                else row.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 1));
+            }
+            LinearLayout.LayoutParams p = Ui.lp(this, -1, 60);
+            p.bottomMargin = Ui.dp(this, 6);
             column.addView(row, p);
         }
         addSpace(column, 12);
@@ -378,7 +394,7 @@ public final class LauncherActivity extends Activity {
         column.addView(volume);
         addSpace(column, 12);
         TextView note = Ui.text(this,
-                "Brightness affects Flip Mini OS only. Rotation changes Android's system-wide auto-rotate setting if you grant permission.",
+                "Brightness affects Flip Mini OS only. Rotate controls only this launcher; Samsung may restrict rotation on its cover screen.",
                 11, false, Ui.MUTED);
         column.addView(note);
     }
@@ -392,10 +408,10 @@ public final class LauncherActivity extends Activity {
     }
     private LinearLayout quickTile(String name) {
         switch (name) {
-            case "Internet": return Ui.makeTile(this, "Internet", "◉", () -> safeSettings(new Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY)));
+            case "Internet": return Ui.makeTile(this, "Internet", "◉", this::showInternetOptions);
             case "Bluetooth": return Ui.makeTile(this, "Bluetooth", "ᛒ", () -> safeSettings(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)));
             case "Torch": return Ui.makeTile(this, "Torch", "ϟ", this::toggleTorch);
-            case "Rotation": return Ui.makeTile(this, "Rotate", "⟳", this::toggleRotation);
+            case "Rotation": return Ui.makeTile(this, "Rotate", "⟳", this::showRotationOptions);
             case "Sound": return Ui.makeTile(this, "Sound", "♫", () -> safeSettings(new Intent(Settings.ACTION_SOUND_SETTINGS)));
             default: return Ui.makeTile(this, "Settings", "⚙", () -> safeSettings(new Intent(Settings.ACTION_SETTINGS)));
         }
@@ -437,18 +453,48 @@ public final class LauncherActivity extends Activity {
         super.onRequestPermissionsResult(code, permissions, grants);
         if (code == 403 && grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) toggleTorch();
     }
-    private void toggleRotation() {
-        if (!Settings.System.canWrite(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + getPackageName()));
-            safeSettings(intent);
-            toast("Allow Modify system settings, then tap Rotate again");
-            return;
-        }
+    /** Always shows a response on the secondary display even if Samsung blocks Settings. */
+    private void showInternetOptions() {
+        String status = "Connection status unavailable";
         try {
-            boolean enabled = Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0) != 0;
-            Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, enabled ? 0 : 1);
-            toast(enabled ? "System auto-rotate off" : "System auto-rotate on");
-        } catch (SecurityException ex) { toast("Rotation change blocked by system"); }
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            NetworkCapabilities caps = manager.getNetworkCapabilities(manager.getActiveNetwork());
+            if (caps == null) status = "No active network";
+            else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) status = "Connected over Wi-Fi";
+            else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) status = "Connected over mobile data";
+            else status = "Network is connected";
+        } catch (RuntimeException ignored) {}
+        new AlertDialog.Builder(this)
+                .setTitle("Internet")
+                .setMessage(status + "\n\nAndroid requires a system settings screen to change Wi-Fi or mobile data. On the Flip6 cover, Samsung may block that screen.")
+                .setPositiveButton("Wi-Fi settings", (dialog, which) -> safeSettings(new Intent(Settings.ACTION_WIFI_SETTINGS)))
+                .setNeutralButton("Connections", (dialog, which) -> safeSettings(new Intent(Settings.ACTION_WIRELESS_SETTINGS)))
+                .setNegativeButton("Close", null)
+                .show();
+    }
+    /**
+     * Change the launcher activity's orientation instead of silently changing
+     * the global auto-rotate flag. Samsung may still lock secondary displays.
+     */
+    private void showRotationOptions() {
+        String[] modes = {"Auto (Flip Mini OS)", "Portrait (Flip Mini OS)", "Landscape (Flip Mini OS)"};
+        new AlertDialog.Builder(this)
+                .setTitle("Rotation")
+                .setSingleChoiceItems(modes, Prefs.rotationMode(this), (dialog, selected) -> {
+                    Prefs.setRotationMode(this, selected);
+                    int orientation = selected == 0 ? ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
+                            selected == 1 ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT :
+                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+                    try {
+                        setRequestedOrientation(orientation);
+                        toast("Requested " + modes[selected] + ". Samsung may lock cover rotation.");
+                    } catch (RuntimeException ex) {
+                        toast("Samsung blocked cover rotation");
+                    }
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
     private void showSettings() {
         LinearLayout column = pageColumn();
@@ -488,7 +534,7 @@ public final class LauncherActivity extends Activity {
         addSpace(column, 15);
         column.addView(heading("Cover camera clearance"));
         column.addView(Ui.text(this,
-                "Everything stays below the camera zone. Adjust clearance if your wallpaper or camera cutouts differ.",
+                "Only the top header avoids the camera corner. Adjust it to keep content visible without wasting the screen.",
                 12, false, Ui.MUTED));
         addSpace(column, 6);
         LinearLayout sides = Ui.horizontal(this);
@@ -503,11 +549,11 @@ public final class LauncherActivity extends Activity {
         TextView clearance = Ui.text(this, "Clearance: " + Prefs.cameraHeight(this) + " dp", 12, true, Ui.TEXT);
         column.addView(clearance);
         SeekBar height = new SeekBar(this);
-        height.setMax(72);
-        height.setProgress(Prefs.cameraHeight(this) - 68);
+        height.setMax(52);
+        height.setProgress(Prefs.cameraHeight(this) - 32);
         height.setOnSeekBarChangeListener(simpleSlider(value -> {
-            Prefs.setCameraHeight(this, value + 68);
-            clearance.setText("Clearance: " + Prefs.cameraHeight(this) + " dp (reopen page to apply)");
+            Prefs.setCameraHeight(this, value + 32);
+            clearance.setText("Clearance: " + Prefs.cameraHeight(this) + " dp (switch tabs to apply)");
         }));
         column.addView(height);
         addSpace(column, 10);
@@ -519,7 +565,7 @@ public final class LauncherActivity extends Activity {
         addSpace(column, 15);
         column.addView(heading("App compatibility"));
         column.addView(Ui.text(this,
-                "Lite build: accessibility navigation and TikTok/Reels toolbar remain disabled to avoid the sensitive-installation warning. Original video apps are unchanged; no root needed.",
+                "TikTok and Instagram use their own layout. Android does not let a regular launcher relocate their buttons or force a 9:16 window. Keep the real apps through MultiStar; resizing remains experimental.",
                 12, false, Ui.MUTED));
         addSpace(column, 10);
         column.addView(Ui.text(this, "V0.3 • Faster grid • Cover safe zone • Glass widget styling", 11, false, Ui.PRIMARY));
