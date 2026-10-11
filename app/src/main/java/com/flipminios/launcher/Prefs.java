@@ -15,8 +15,10 @@ final class Prefs {
     static void setOverlayOnRight(Context c, boolean yes) { store(c).edit().putBoolean("overlayOnRight", yes).apply(); }
     static boolean navigationDockEnabled(Context c) { return store(c).getBoolean("navigation_dock", false); }
     static void setNavigationDock(Context c, boolean enabled) { store(c).edit().putBoolean("navigation_dock", enabled).apply(); }
-    static int cameraHeight(Context c) { return Math.max(68, Math.min(140, store(c).getInt("camera_height", 94))); }
-    static void setCameraHeight(Context c, int height) { store(c).edit().putInt("camera_height", Math.max(68, Math.min(140, height))).apply(); }
+    static int cameraHeight(Context c) { return Math.max(32, Math.min(84, store(c).getInt("camera_height_v4", 52))); }
+    static void setCameraHeight(Context c, int height) { store(c).edit().putInt("camera_height_v4", Math.max(32, Math.min(84, height))).apply(); }
+    static int rotationMode(Context c) { return Math.max(0, Math.min(2, store(c).getInt("rotation_mode", 0))); }
+    static void setRotationMode(Context c, int mode) { store(c).edit().putInt("rotation_mode", Math.max(0, Math.min(2, mode))).apply(); }
     static boolean camerasOnRight(Context c) { return store(c).getBoolean("camera_right", false); }
     static void setCamerasOnRight(Context c, boolean right) { store(c).edit().putBoolean("camera_right", right).apply(); }
     static int columns(Context c) { return store(c).getInt("columns", 3); }
