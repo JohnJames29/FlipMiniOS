@@ -74,7 +74,23 @@ final class CoverShizukuControl {
         pending = result;
         try {
             if (!Shizuku.pingBinder()) {
-                deliver("Shizuku is not running. Start it using Wireless debugging.");
+                // The provider may receive the Binder shortly after our activity starts.
+                main.postDelayed(() -> {
+                    if (closed || pending == null) return;
+                    try {
+                        if (!Shizuku.pingBinder()) {
+                            deliver("Flip Mini OS has not received a Shizuku connection. " +
+                                    "If Shizuku says 'running', reopen Flip Mini OS once. " +
+                                    "This is an app connection problem, not necessarily a stopped server.");
+                        } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                            Shizuku.requestPermission(REQUEST);
+                        } else {
+                            bind();
+                        }
+                    } catch (RuntimeException ex) {
+                        deliver("Shizuku connection failed: " + ex.getClass().getSimpleName());
+                    }
+                }, 1400);
             } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                 Shizuku.requestPermission(REQUEST);
             } else {
