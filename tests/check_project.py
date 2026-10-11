@@ -9,7 +9,7 @@ print(f'XML: {len(files)} valid files')
 manifest = (root / 'app/src/main/AndroidManifest.xml').read_text()
 assert 'android.permission.INTERNET' not in manifest
 assert 'android.permission.QUERY_ALL_PACKAGES' not in manifest
-assert 'android.permission.BIND_ACCESSIBILITY_SERVICE' in manifest
+assert 'android.permission.BIND_ACCESSIBILITY_SERVICE' not in manifest
 assert 'android:exported="true"' in manifest
 assert 'samsung_widget_info' in manifest
 print('Manifest permissions and Flex Window widget metadata: OK')
