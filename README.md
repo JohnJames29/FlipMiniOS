@@ -1,32 +1,22 @@
-# Flip Mini OS v0.4 - Compact Cover Fix (Lite)
+# Flip Mini OS v0.5 · Control tiles + Rotation + Native-App Fit Experiment
 
-For **Galaxy Z Flip6 SM-F741B**, Android 16 / One UI 8.5. Rootless; no unlock or Accessibility Service.
+**Samsung Galaxy Z Flip6 (SM-F741B), Android 16 / One UI 8.5. No root.**
 
-## What changed from v0.3
+## What changed
+- The six Panel controls now use a single two-line icon+label view per tile and 72dp height so labels no longer get clipped. The screen is scrollable to reach brightness and volume.
+- Rotate now has **two separate kinds of actions**: Auto/Portrait/Landscape for Flip Mini OS itself, and an optional Android **System auto-rotate** toggle for other apps. Android requires user approval for "Modify system settings" to use the latter. It still cannot force another app or Samsung's cover display to honor orientation.
+- **Experimental native 9:16 launch:** Edit → Test TikTok 9:16 / Test Instagram 9:16. Opens each existing native app while requesting a right-aligned portrait window via `ActivityOptions.setLaunchBounds()`. This is explicitly experimental; Samsung's Flip6 cover typically does not support freeform window management. Android may ignore the requested size entirely, meaning TikTok/Reels remain cropped.
+- Original apps, profiles, feeds and permissions remain unchanged. Experimental window bounds are attempted only when user explicitly taps "Try once".
+- Kept rootless Lite APK with no Accessibility Service. It does not bypass Play Protect or modify the system.
 
-- Reduced the cover-screen camera shelf to a compact configurable 52dp default. The former 94dp spacer on dense cover firmware pushed pages a long way down.
-- Camera cutout protection applies to the header corner. Edit > Camera clearance offers 32–84dp; some Samsung-reported system cutouts are capped at 68dp. You can change camera side.
-- Shortened the bottom navigation and search bar. The controls now use three smaller tiles per row so volume/brightness are reachable.
-- **Internet** opens a real in-app status/dialog even if Samsung blocks its external settings page. Wi-Fi and Connections buttons may still be blocked or appear on the inner display by the system. Direct Wi-Fi toggles are restricted by modern Android.
-- **Rotate** offers Auto, Portrait, and Landscape for **Flip Mini OS itself**, without requiring "Modify system settings". Samsung may ignore orientation requests on its cover. It does not force rotation of TikTok/Instagram.
-- Keeps the v0.3 glass-style widget, recycled app grid and lazy icons.
+## On-device test sequence
+1. Panel: icons and full labels for Internet/Bluetooth/Torch/Rotate/Sound/Settings visible.
+2. Panel: scroll and confirm both brightness and volume sliders can be reached.
+3. Rotate → "System auto-rotate (other apps)" displays Android status and asks permission if needed.
+4. Test a third-party app that already supports rotation. Samsung's cover policy can still block rotation.
+5. Edit → Test TikTok 9:16, then Instagram 9:16. Verify whether the original app actually opens in a right-aligned narrow window. If it stays square, Android rejected/ignored the bounds.
+6. Check normal app drawer launching still works.
 
-## Important limitations
+**Limitations:** Samsung officially lists native cover-screen aspect-ratio controls as Flip7-exclusive in MultiStar. Android's launch bounds are ignored on displays without freeform/PiP support. Without root/privileged display management or changing the apps, a third-party launcher cannot promise to rearrange Reels/TikTok UI. We do not promise a native crop fix in v0.5.
 
-This is not a replacement One UI cover home screen. Use **Settings > Cover screen > Widgets > Flip Mini OS** to open from Samsung's widget, or Good Lock MultiStar.
-
-TikTok and Instagram are the original, unmodified apps. Their **native 9:16 resizing, camera cutout handling and button relocation are not fixed** by this build. A stock third-party launcher cannot reliably change those apps' window sizes or internal controls. The previous experimental Accessibility Service remains **unregistered**, to avoid Play Protect's sensitive-permission block.
-
-## Build and test
-
-GitHub Actions -> "Build Flip Mini OS APK" builds the debug artifact. Test on the cover:
-1. Check that the app title appears high enough without crossing the cameras. Adjust **Edit > Cover camera clearance** if needed.
-2. Open Apps and scroll, verify navigation and search are visible.
-3. Open Panel: all six controls should fit in two rows.
-4. Tap Internet: the in-app dialog must appear; test the Wi-Fi settings link separately.
-5. Tap Rotate and choose Portrait/Landscape/Auto: the dialog should appear; Samsung may lock the cover screen.
-6. Test native TikTok/Reels separately and record which elements are blocked by the camera cutouts.
-
-APK compilation is checked by GitHub Actions; real cover-screen operation requires physical testing.
-
-No internet permission or telemetry, no root and no firmware modification.
+GitHub Actions workflow: [Build Flip Mini OS APK](.github/workflows/android-apk.yml)
