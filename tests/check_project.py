@@ -73,3 +73,12 @@ assert 'wm density -d 1 reset' in service
 assert 'requestPermission' in bridge and 'bindUserService' in bridge
 assert 'testVideoWindow(' not in launcher  # broken floating overlay removed
 print('v0.6 Shizuku safety and native-app fallback structural checks passed')
+
+# v0.6.1: Shizuku must actually receive its Binder through a protected provider.
+assert 'rikka.shizuku.ShizukuProvider' in manifest
+assert '${applicationId}.shizuku' in manifest
+assert 'android.permission.INTERACT_ACROSS_USERS_FULL' in manifest
+assert 'moe.shizuku.manager.permission.API_V23' in manifest
+assert 'android:multiprocess="false"' in manifest
+assert 'moe.shizuku.client.V3_SUPPORT' in manifest
+print('Shizuku Binder discovery provider present and access protected')
