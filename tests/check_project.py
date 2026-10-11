@@ -64,7 +64,7 @@ bridge = (root / 'app/src/main/java/com/flipminios/launcher/CoverShizukuControl.
 build = (root / 'app/build.gradle').read_text()
 assert 'dev.rikka.shizuku:api:13.1.5' in build
 assert 'dev.rikka.shizuku:provider:13.1.5' in build
-assert 'versionName \'0.6.0\'' in build
+assert 'versionName \'0.6.1\'' in build
 assert 'Physical size: 748x720' in service
 assert 'Physical density: 340' in service
 assert 'COMPACT_DPI = 280' in service
