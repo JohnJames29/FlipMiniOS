@@ -129,6 +129,15 @@ public final class LauncherActivity extends Activity {
     private void buildShell() {
         outer = Ui.vertical(this);
         outer.setBackgroundColor(Ui.BG);
+        // Android 15+ draws target-35 apps edge-to-edge. Respect system bars
+        // on the inner/main display, but keep the cover in immersive mode.
+        if (!coverDisplay()) {
+            outer.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                return insets;
+            });
+        }
         content = new FrameLayout(this);
         outer.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         navBar = navigation();
