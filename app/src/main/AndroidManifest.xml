@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <queries>
       <intent>
         <action android:name="android.intent.action.MAIN" />
@@ -12,6 +13,14 @@
     </queries>
     <application android:allowBackup="false" android:label="@string/app_name"
       android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
+        <!-- Required by Shizuku: receives the server Binder when Flip Mini OS starts. -->
+        <provider android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
         <activity android:name=".LauncherActivity" android:exported="true"
           android:screenOrientation="unspecified" android:resizeableActivity="true"
           android:configChanges="orientation|screenSize|smallestScreenSize|density|uiMode">
