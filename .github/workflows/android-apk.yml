@@ -35,6 +35,13 @@ jobs:
           java -cp /tmp/flip-syntax ParseJava app/src/main/java
       - name: Compile debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Verify packaged Shizuku Binder provider
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > /tmp/flip-manifest.txt
+          grep -Fq 'rikka.shizuku.ShizukuProvider' /tmp/flip-manifest.txt
+          grep -Fq 'com.flipminios.launcher.shizuku' /tmp/flip-manifest.txt
+          grep -Fq 'android.permission.INTERACT_ACROSS_USERS_FULL' /tmp/flip-manifest.txt
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
