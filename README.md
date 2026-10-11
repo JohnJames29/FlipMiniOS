@@ -1,4 +1,6 @@
-# Flip Mini OS v0.6 · Rootless Cover Screen Build
+# Flip Mini OS v0.6.1 · Rootless Cover Screen Build
+
+**Shizuku connection fix:** Explicitly register the protected Shizuku Binder provider required by the official API and API_V23 permission. The earlier v0.6 omitted it and falsely reported that Shizuku wasn't running. v0.6.1 waits briefly for the Binder and reports connection failure separately.
 
 **Target device:** Samsung Galaxy Z Flip6 SM-F741B, Android 16 / One UI 8.5.
 **Status:** Android source build checked through GitHub Actions; Samsung hardware verification requires the user's physical device.
