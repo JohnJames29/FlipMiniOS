@@ -18,6 +18,7 @@ import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.util.DisplayMetrics;
 import android.widget.TextView;
 
 /**
@@ -37,6 +38,8 @@ public final class CoverRotationEngineActivity extends Activity {
     private static Context coverContext;
     private static int installedDisplayId = Display.INVALID_DISPLAY;
     private static boolean attached;
+    private static boolean refreshing;
+    private static final int REFRESH_WAIT_MS = 850;
 
     public static void startOnCover(Context context) {
         if (!Prefs.coverRotationEnabled(context)) return;
@@ -48,6 +51,15 @@ public final class CoverRotationEngineActivity extends Activity {
         if (attached && installedDisplayId == cover.getDisplayId()) {
             applyPreferences(context);
             return;
+        }
+        // Avoid a transient cover activity, which can reveal a blank system-bar
+        // region. We already have a legitimate cover activity in the foreground.
+        if (context instanceof Activity) {
+            Display current = ((Activity) context).getDisplay();
+            if (current != null && current.getDisplayId() == cover.getDisplayId()) {
+                installOverlay(context, cover);
+                return;
+            }
         }
         Intent intent = new Intent(context, CoverRotationEngineActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
@@ -91,6 +103,7 @@ public final class CoverRotationEngineActivity extends Activity {
         coverContext = null;
         installedDisplayId = Display.INVALID_DISPLAY;
         attached = false;
+        refreshing = false;
     }
 
     public static boolean isActive() {
@@ -115,34 +128,75 @@ public final class CoverRotationEngineActivity extends Activity {
         }
     }
 
-    /** Optional one-shot orientation request refresh; does not modify other apps. */
+    /**
+     * Unlike toggling LOCKED to FULL_SENSOR, explicitly request an orientation
+     * perpendicular to the current display and then restore sensor rotation.
+     * This can produce a real configuration change, but third-party app reflow
+     * is controlled by Instagram/One UI and remains unverified on the Flip6.
+     */
     public static void requestRefresh() {
-        if (!isActive()) return;
+        if (!isActive() || coverContext == null || overlayManager == null ||
+                refreshing) return;
+        if (!Prefs.coverRotationAuto(coverContext)) {
+            android.widget.Toast.makeText(coverContext,
+                    "Enable Auto rotation before refreshing", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        DisplayManager manager = (DisplayManager) coverContext.getSystemService(Context.DISPLAY_SERVICE);
+        Display display = manager == null ? null : manager.getDisplay(installedDisplayId);
+        if (display == null) return;
+        refreshing = true;
         try {
+            DisplayMetrics metrics = new DisplayMetrics();
+            display.getRealMetrics(metrics);
+            // Force the opposite layout class, not a lock on the same angle.
+            int forced = metrics.widthPixels >= metrics.heightPixels ?
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT :
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
             WindowManager.LayoutParams p =
                     (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-            p.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED;
+            p.screenOrientation = forced;
             overlayManager.updateViewLayout(rotationAnchor, p);
+            setButtonFeedback(true);
             MAIN.postDelayed(() -> {
-                if (coverContext != null && isActive()) {
-                    // Restore the user's selected mode, not always Auto.
-                    WindowManager.LayoutParams fresh =
-                            (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-                    fresh.screenOrientation = Prefs.coverRotationAuto(coverContext) ?
-                            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
-                            ActivityInfo.SCREEN_ORIENTATION_LOCKED;
-                    try { overlayManager.updateViewLayout(rotationAnchor, fresh); }
-                    catch (RuntimeException ignored) { }
+                if (isActive() && overlayManager != null && coverContext != null) {
+                    try {
+                        WindowManager.LayoutParams restore =
+                                (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
+                        restore.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR;
+                        overlayManager.updateViewLayout(rotationAnchor, restore);
+                    } catch (RuntimeException ex) {
+                        android.util.Log.w("FlipCoverRotation", "Cannot restore sensor orientation", ex);
+                    }
                 }
-            }, 350);
+                refreshing = false;
+                setButtonFeedback(false);
+            }, REFRESH_WAIT_MS);
         } catch (RuntimeException ex) {
-            android.util.Log.w("FlipCoverRotation", "Refresh request failed", ex);
+            refreshing = false;
+            setButtonFeedback(false);
+            android.util.Log.w("FlipCoverRotation", "Refresh rotation cycle failed", ex);
         }
+    }
+
+    /** Shows that the tap was received without claiming Instagram reflowed. */
+    private static void setButtonFeedback(boolean pending) {
+        if (refreshButton == null) return;
+        refreshButton.setText(pending ? "···" : "⟳");
+        refreshButton.setAlpha(pending ? 0.60f : 1.0f);
     }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         Display display = getDisplay();
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         if (display == null || display.getDisplayId() == Display.DEFAULT_DISPLAY ||
                 display.getDisplayId() != 1 ||
                 !Prefs.coverRotationEnabled(this) || !Settings.canDrawOverlays(this)) {
@@ -200,8 +254,12 @@ public final class CoverRotationEngineActivity extends Activity {
         button.setOnClickListener(v -> requestRefresh());
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(
                 size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
+        p.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         // Bottom-left avoids the right-hand engagement buttons on Reels,
         // and avoids the cameras located at the top of the cover.
         p.gravity = Gravity.BOTTOM | Gravity.START;
