@@ -40,7 +40,9 @@ jobs:
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           "$AAPT" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > /tmp/flip-manifest.txt
           grep -Fq 'CoverRotationEngineActivity' /tmp/flip-manifest.txt
-          grep -Fq 'CoverRotationAccessibilityService' /tmp/flip-manifest.txt
+          grep -Fq 'CoverRotationForegroundService' /tmp/flip-manifest.txt
+          grep -Fq 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE' /tmp/flip-manifest.txt
+          ! grep -Fq 'android.permission.BIND_ACCESSIBILITY_SERVICE' /tmp/flip-manifest.txt
           grep -Fq 'android.permission.SYSTEM_ALERT_WINDOW' /tmp/flip-manifest.txt
           ! grep -Fq 'rikka.shizuku.ShizukuProvider' /tmp/flip-manifest.txt
           unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -Fq 'assets/third_party/CoverSpin-LICENSE.txt'
