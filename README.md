@@ -1,35 +1,40 @@
-# Flip Mini OS v0.7: Built-in cover rotation
+# Flip Mini OS v0.7.1 · Safer CoverSpin-inspired rotation
 
-**For Galaxy Z Flip6 cover display.** This version preserves the existing launcher, widgets, and installed original apps. It replaces the unsuccessful Shizuku experiment with an adaptation of CoverSpin's MIT-licensed Android secondary-display rotation overlay.
+Target: Samsung Galaxy Z Flip6 cover display, Android 16 / One UI 8.5.
 
-## What is implemented
+## Installation-blocking fix
 
-- **Auto-rotate cover**: an invisible, 0x0 `TYPE_APPLICATION_OVERLAY` on the cover display requests `SCREEN_ORIENTATION_FULL_SENSOR`.
-- **Lock cover orientation**: switches the cover overlay to `SCREEN_ORIENTATION_LOCKED`.
-- **Stop cover rotation**: removes the overlay and optional refresh button.
-- **Optional rotation refresh bubble**: a small button at bottom-left toggles the overlay orientation request to locked briefly, then restores the selected rotation mode. **It has NOT been verified to repair Instagram Reels layout after a swipe.** The original CoverSpin did not claim this feature; it is our experiment.
-- **Optional accessibility wake keepalive**: reactivates the cover overlay on screen wake. Accessibility XML explicitly forbids reading window content and performing gestures. The service ignores all accessibility events.
-- **No Shizuku dependency, ADB, shell commands, root, network access, or display density overrides.**
-- Existing TikTok, Instagram and Reddit packages remain untouched.
+v0.7.0 declared a BIND_ACCESSIBILITY_SERVICE-protected service to restart rotation after sleep. Google's Play Protect guidance explains that newly sideloaded apps using Accessibility are commonly blocked with the message "App blocked to protect your device." **v0.7.1 removes the Accessibility service entirely**, including the manifest registration and permission. No need to turn off Play Protect or Samsung Auto Blocker to try this build.
+
+It is still possible for Play Protect to block a new, unsigned-reputation APK for another reason. This is not a guarantee of Play Protect approval.
+
+## Functionality retained
+
+- Original launcher, widget, app grid, and untouched TikTok, Instagram, and Reddit.
+- Cover-only 0x0 transparent overlay requesting sensor-based orientation, based on CoverSpin's MIT-licensed source.
+- Explicit Auto/Lock/Stop controls.
+- Optional floating refresh bubble for Instagram's partially corrected layout; not verified to solve the next-Reel reset.
+- **Optional wake restoration via a visible foreground service**, not Accessibility. Activate from Edit > Wake helper. While Android permits the service to run, it listens for screen on/unlock and ensures the cover overlay is restored. A visible system notification contains a Stop action. This behavior is best-effort under Samsung battery/background activity restrictions.
+- Stop cover rotation disables the helper and removes the overlay.
+- No Shizuku, root, Internet permission, Accessibility, ADB or display density changes.
+- On newer Android versions a specialUse foreground service type is required for an ongoing user-initiated cover rotation helper. This type and its purpose are declared in AndroidManifest.xml.
 
 ## Enable
 
-1. Install the APK over the earlier Flip Mini OS (same package name; a different signing key may require uninstall first).
-2. Add **Flip Mini OS** to **Good Lock → MultiStar → Launcher Widget / cover apps** if necessary, since Samsung gates external activities.
-3. From Flip Mini OS **Edit → Cover rotation → Auto-rotate cover**, or the **Panel → Rotate** tile, enable the cover rotation. Grant **Display over other apps** only if you are comfortable. The Android permission screen may launch on the damaged inner panel; do not force access.
-4. **Optional:** `Permissions & optional auto-start → Optional auto-start`, then enable **Flip Mini OS cover rotation** in Android Accessibility. This does not scan app screens or text, but Android sideload restrictions may require explicitly allowing restricted settings. Without the optional service, rotation can start when the launcher is opened and may stop after system process death.
-5. Disable CoverSpin's active overlay if both apps compete for rotation.
+1. Install v0.7.1. Do not disable Play Protect to install it.
+2. Ensure Flip Mini OS is allowed in Good Lock / MultiStar cover apps.
+3. Edit > Auto-rotate cover. Grant Display over other apps permission only if comfortable. It may open on the damaged inner display, so don't risk that panel.
+4. Optionally select **Wake helper: OFF** to enable persistent screen-wake restoration. A notification will show while active. Turning it OFF doesn't disable core rotation.
+5. Disable the separate CoverSpin rotation service to avoid two apps fighting over orientation.
 
-## Evidence and limitations
+## Limitations
 
-We inspected CoverSpin's open-source implementation at https://github.com/crispim1411/CoverSpin. Its core uses an invisible overlay on the **secondary display**, not `wm user-rotation`. This same mechanism is now integrated into the app. Attribution and MIT license are included in `third_party/CoverSpin-LICENSE.txt` and the APK assets.
+The cover rotation feature's behavior on this exact Samsung firmware is not certified by generic emulator tests. Android foreground services may be interrupted or restricted. The original apps determine their own layouts: this update does not guarantee TikTok/Reels camera-safe controls or prevent Instagram from resetting layouts on a swipe.
 
-**Compilation and generic Android emulator smoke tests cannot certify behavior on One UI 8.5 Flip6 cover hardware.** The overlay may still be blocked unless enabled through MultiStar; it may not preserve Instagram's Reel layout when swiping, and it cannot independently move controls hidden behind the physical cover cameras. Original Reddit, Instagram and TikTok remain untouched. No permanent OS changes are made.
+## Attribution
 
-## Reverting
+Core orientation overlay approach adapted from [CoverSpin](https://github.com/crispim1411/CoverSpin) under the MIT License (Copyright © 2024 Crispim). See third_party/CoverSpin-LICENSE.txt and bundled APK asset.
 
-In Flip Mini OS, choose **Stop cover rotation**; if using auto-start, also turn OFF the optional accessibility service. The overlay is removed; Samsung's OS settings remain unchanged.
+## Build checks
 
-## Build
-
-GitHub Actions builds `app-debug.apk` and checks source tests, app permissions, the rotation manifest components and MIT license.
+GitHub Actions runs source tests, Java parsing, full Android compile, packaged manifest verification for the foreground service and absence of Accessibility, and produces app-debug.apk.
