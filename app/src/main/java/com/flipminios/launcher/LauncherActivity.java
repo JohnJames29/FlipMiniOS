@@ -94,6 +94,9 @@ public final class LauncherActivity extends Activity {
         refreshAppsIfNeeded(false);
         if (Prefs.coverRotationEnabled(this) && Settings.canDrawOverlays(this)) {
             CoverRotationEngineActivity.startOnCover(this);
+            if (Prefs.coverRotationKeepAlive(this)) {
+                CoverRotationForegroundService.start(this);
+            }
         }
     }
     private void refreshAppsIfNeeded(boolean first) {
@@ -550,6 +553,8 @@ public final class LauncherActivity extends Activity {
 
     private void stopCoverRotation() {
         Prefs.setCoverRotationEnabled(this, false);
+        Prefs.setCoverRotationKeepAlive(this, false);
+        CoverRotationForegroundService.stop(this);
         CoverRotationEngineActivity.stop();
         toast("Cover rotation helper disabled");
         showPage("settings");
@@ -563,40 +568,62 @@ public final class LauncherActivity extends Activity {
         showPage("settings");
     }
 
+    private void toggleCoverWakeService() {
+        boolean enable = !Prefs.coverRotationKeepAlive(this);
+        Prefs.setCoverRotationKeepAlive(this, enable);
+        if (enable) {
+            Prefs.setCoverRotationEnabled(this, true);
+            if (!Settings.canDrawOverlays(this)) {
+                showCoverRotationPermissions();
+                return;
+            }
+            if (CoverRotationForegroundService.start(this)) {
+                toast("Rotation wake helper on; visible Android service");
+            } else {
+                Prefs.setCoverRotationKeepAlive(this, false);
+                toast("Android prevented the wake service from starting");
+            }
+        } else {
+            CoverRotationForegroundService.stop(this);
+            toast("Wake helper disabled; rotation remains available");
+        }
+        showPage("settings");
+    }
+
     private void showCoverRotationPermissions() {
         boolean allowed = Settings.canDrawOverlays(this);
         new AlertDialog.Builder(this)
-                .setTitle("Cover rotation permissions")
-                .setMessage("Overlay access: " + (allowed ? "Allowed" : "Not allowed") +
-                        "\n\nThis uses a transparent 0×0 cover-display overlay to request " +
-                        "orientation changes, like CoverSpin. No root or Shizuku.\n\n" +
-                        "Optional Accessibility service: restarts the overlay after " +
-                        "screen unlock. It does not read screen contents or perform gestures.\n\n" +
-                        "Samsung may open permission screens on your damaged main display; " +
-                        "do not risk it if the screen is unusable. " +
-                        "Add Flip Mini OS to Good Lock → MultiStar cover apps.")
+                .setTitle("Cover rotation setup")
+                .setMessage("Overlay permission: " + (allowed ? "Allowed" : "Not allowed") +
+                        "\n\nCore rotation needs only Display over other apps permission. " +
+                        "The optional wake-up helper uses an Android foreground service " +
+                        "with a visible notification, not Accessibility.\n\n" +
+                        "It can restore the cover overlay after screen wake while the service " +
+                        "is allowed to run. Samsung battery restrictions may still stop it.\n\n" +
+                        "Samsung may open permission screens on your damaged inner display, " +
+                        "so do not force access if it becomes unusable.")
                 .setPositiveButton("Overlay permission", (d, w) -> {
                     Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                             Uri.parse("package:" + getPackageName()));
                     safeSettings(intent);
                 })
-                .setNeutralButton("Optional auto-start", (d, w) ->
-                        safeSettings(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                .setNeutralButton("Toggle wake helper", (d, w) -> toggleCoverWakeService())
                 .setNegativeButton("Close", null)
                 .show();
     }
 
     private void showCoverRotationOptions() {
         String[] entries = {"Auto-rotate cover (sensor)", "Lock cover rotation",
-                "Show/hide manual refresh bubble", "Stop cover rotation",
-                "Permissions and optional auto-start"};
+                "Show/hide manual refresh bubble", "Toggle wake-up foreground service",
+                "Stop cover rotation", "Permissions"};
         new AlertDialog.Builder(this).setTitle("CoverSpin rotation engine")
                 .setItems(entries, (d, choice) -> {
                     switch (choice) {
                         case 0: activateCoverRotation(true); break;
                         case 1: activateCoverRotation(false); break;
                         case 2: toggleCoverRefreshButton(); break;
-                        case 3: stopCoverRotation(); break;
+                        case 3: toggleCoverWakeService(); break;
+                        case 4: stopCoverRotation(); break;
                         default: showCoverRotationPermissions(); break;
                     }
                 }).setNegativeButton("Close", null).show();
@@ -673,7 +700,7 @@ public final class LauncherActivity extends Activity {
         column.addView(Ui.text(this,
                 "CoverSpin-inspired sensor rotation for your ORIGINAL apps. " +
                 "Uses an opt-in transparent overlay, not shell commands. " +
-                "Optional accessibility only restarts it after screen wake.",
+                "Optional visible foreground service restores rotation after screen wake.",
                 12, false, Ui.MUTED));
         addSpace(column, 7);
         column.addView(Ui.pill(this, "Auto-rotate cover",
@@ -685,10 +712,14 @@ public final class LauncherActivity extends Activity {
         column.addView(Ui.pill(this, "Show/hide refresh bubble",
                 this::toggleCoverRefreshButton), Ui.lp(this, -1, 44));
         addSpace(column, 5);
+        column.addView(Ui.pill(this, "Wake helper: " +
+                (Prefs.coverRotationKeepAlive(this) ? "ON" : "OFF"),
+                this::toggleCoverWakeService), Ui.lp(this, -1, 44));
+        addSpace(column, 5);
         column.addView(Ui.pill(this, "Stop cover rotation",
                 this::stopCoverRotation), Ui.lp(this, -1, 44));
         addSpace(column, 5);
-        column.addView(Ui.pill(this, "Permissions & optional auto-start",
+        column.addView(Ui.pill(this, "Overlay permission & setup",
                 this::showCoverRotationPermissions), Ui.lp(this, -1, 44));
         addSpace(column, 12);
         column.addView(heading("App compatibility"));
@@ -697,7 +728,7 @@ public final class LauncherActivity extends Activity {
                 "The optional refresh bubble briefly reapplies orientation, but fixing native cropping is not guaranteed.",
                 12, false, Ui.MUTED));
         addSpace(column, 10);
-        column.addView(Ui.text(this, "V0.7 • CoverSpin rotation • No Shizuku • Original apps", 11, false, Ui.PRIMARY));
+        column.addView(Ui.text(this, "V0.7.1 • CoverSpin rotation • No Accessibility or Shizuku", 11, false, Ui.PRIMARY));
     }
     private void moveTile(String tile, int change) {
         List<String> next = Prefs.tiles(this);
