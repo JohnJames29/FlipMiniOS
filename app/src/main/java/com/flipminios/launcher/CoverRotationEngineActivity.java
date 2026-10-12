@@ -39,7 +39,13 @@ public final class CoverRotationEngineActivity extends Activity {
     private static int installedDisplayId = Display.INVALID_DISPLAY;
     private static boolean attached;
     private static boolean refreshing;
-    private static final int REFRESH_WAIT_MS = 850;
+    // Allow Android long enough for an actual display rotation to occur,
+    // and avoid rapid changes that Android may classify as an orientation loop.
+    private static final int REFRESH_WAIT_MS = 1700;
+    private static final int RESULT_DURATION_MS = 2400;
+    private static Runnable completion;
+    private static Runnable resetFeedback;
+    private static DisplayManager.DisplayListener displayObserver;
 
     public static void startOnCover(Context context) {
         if (!Prefs.coverRotationEnabled(context)) return;
@@ -93,6 +99,7 @@ public final class CoverRotationEngineActivity extends Activity {
 
     /** Disables cover rotation overlay without affecting display configuration. */
     public static void stop() {
+        cancelRefresh();
         removeButton();
         if (rotationAnchor != null && overlayManager != null) {
             try { overlayManager.removeView(rotationAnchor); }
@@ -111,17 +118,16 @@ public final class CoverRotationEngineActivity extends Activity {
     }
 
     public static void applyPreferences(Context context) {
-        if (!isActive() || overlayManager == null) return;
+        if (!isActive() || overlayManager == null || refreshing) return;
         try {
             WindowManager.LayoutParams p =
                     (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
             int newMode = Prefs.coverRotationAuto(context) ?
                     ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
                     ActivityInfo.SCREEN_ORIENTATION_LOCKED;
-            if (p.screenOrientation != newMode) {
-                p.screenOrientation = newMode;
-                overlayManager.updateViewLayout(rotationAnchor, p);
-            }
+            // Both overlay windows must request the SAME orientation. The
+            // topmost floating button otherwise overrides the invisible anchor.
+            applyOrientationToBoth(newMode);
             showButtonIfEnabled(context);
         } catch (RuntimeException ex) {
             android.util.Log.w("FlipCoverRotation", "Unable to update cover rotation", ex);
@@ -129,61 +135,157 @@ public final class CoverRotationEngineActivity extends Activity {
     }
 
     /**
-     * Unlike toggling LOCKED to FULL_SENSOR, explicitly request an orientation
-     * perpendicular to the current display and then restore sensor rotation.
-     * This can produce a real configuration change, but third-party app reflow
-     * is controlled by Instagram/One UI and remains unverified on the Flip6.
+     * Synchronously update the two TYPE_APPLICATION_OVERLAY windows. CoverSpin
+     * updates its gesture overlay together with the underlying 0x0 anchor.
+     * Our v0.7.2 skipped this, leaving conflicting orientation requests.
+     */
+    private static void applyOrientationToBoth(int orientation) {
+        if (overlayManager == null) return;
+        if (refreshButton != null && refreshButton.getParent() != null) {
+            WindowManager.LayoutParams buttonParams =
+                    (WindowManager.LayoutParams) refreshButton.getLayoutParams();
+            if (buttonParams.screenOrientation != orientation) {
+                buttonParams.screenOrientation = orientation;
+                overlayManager.updateViewLayout(refreshButton, buttonParams);
+            }
+        }
+        if (rotationAnchor != null && rotationAnchor.getParent() != null) {
+            WindowManager.LayoutParams anchorParams =
+                    (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
+            if (anchorParams.screenOrientation != orientation) {
+                anchorParams.screenOrientation = orientation;
+                overlayManager.updateViewLayout(rotationAnchor, anchorParams);
+            }
+        }
+    }
+
+    private static void cancelRefresh() {
+        if (completion != null) MAIN.removeCallbacks(completion);
+        if (resetFeedback != null) MAIN.removeCallbacks(resetFeedback);
+        completion = null;
+        resetFeedback = null;
+        if (displayObserver != null && coverContext != null) {
+            DisplayManager mgr = (DisplayManager) coverContext.getSystemService(Context.DISPLAY_SERVICE);
+            if (mgr != null) mgr.unregisterDisplayListener(displayObserver);
+        }
+        displayObserver = null;
+        refreshing = false;
+    }
+
+    /**
+     * A real rotation trial: update BOTH overlays, observe whether Android
+     * changed the actual display rotation, then restore the chosen sensor mode.
+     * A request or a click animation is NOT evidence that rotation took place.
      */
     public static void requestRefresh() {
         if (!isActive() || coverContext == null || overlayManager == null ||
                 refreshing) return;
         if (!Prefs.coverRotationAuto(coverContext)) {
             android.widget.Toast.makeText(coverContext,
-                    "Enable Auto rotation before refreshing", android.widget.Toast.LENGTH_SHORT).show();
+                    "Switch to Auto rotation first", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        DisplayManager manager = (DisplayManager) coverContext.getSystemService(Context.DISPLAY_SERVICE);
-        Display display = manager == null ? null : manager.getDisplay(installedDisplayId);
-        if (display == null) return;
+        DisplayManager manager =
+                (DisplayManager) coverContext.getSystemService(Context.DISPLAY_SERVICE);
+        final Display display = manager == null ? null : manager.getDisplay(installedDisplayId);
+        if (display == null || display.getState() != Display.STATE_ON) {
+            showRefreshResult(false);
+            return;
+        }
+
+        if (resetFeedback != null) MAIN.removeCallbacks(resetFeedback);
+        resetFeedback = null;
+        final int initialRotation = display.getRotation();
+        final boolean[] rotated = {false};
+        displayObserver = new DisplayManager.DisplayListener() {
+            @Override public void onDisplayAdded(int displayId) { }
+            @Override public void onDisplayRemoved(int displayId) { }
+            @Override public void onDisplayChanged(int displayId) {
+                if (displayId != installedDisplayId) return;
+                Display live = manager.getDisplay(displayId);
+                if (live != null && live.getRotation() != initialRotation) {
+                    rotated[0] = true;
+                }
+            }
+        };
+        manager.registerDisplayListener(displayObserver, MAIN);
         refreshing = true;
+        setButtonPending();
+
         try {
             DisplayMetrics metrics = new DisplayMetrics();
             display.getRealMetrics(metrics);
-            // Force the opposite layout class, not a lock on the same angle.
-            int forced = metrics.widthPixels >= metrics.heightPixels ?
+            final int forced = metrics.widthPixels >= metrics.heightPixels ?
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT :
                     ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-            WindowManager.LayoutParams p =
-                    (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-            p.screenOrientation = forced;
-            overlayManager.updateViewLayout(rotationAnchor, p);
-            setButtonFeedback(true);
-            MAIN.postDelayed(() -> {
-                if (isActive() && overlayManager != null && coverContext != null) {
-                    try {
-                        WindowManager.LayoutParams restore =
-                                (WindowManager.LayoutParams) rotationAnchor.getLayoutParams();
-                        restore.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR;
-                        overlayManager.updateViewLayout(rotationAnchor, restore);
-                    } catch (RuntimeException ex) {
-                        android.util.Log.w("FlipCoverRotation", "Cannot restore sensor orientation", ex);
-                    }
+            // Unlike v0.7.2, the visible overlay no longer vetoes the anchor.
+            applyOrientationToBoth(forced);
+            completion = () -> {
+                completion = null;
+                if (manager.getDisplay(installedDisplayId) != null &&
+                        manager.getDisplay(installedDisplayId).getRotation() != initialRotation) {
+                    rotated[0] = true;
+                }
+                if (displayObserver != null) {
+                    manager.unregisterDisplayListener(displayObserver);
+                    displayObserver = null;
                 }
                 refreshing = false;
-                setButtonFeedback(false);
-            }, REFRESH_WAIT_MS);
+                if (isActive() && coverContext != null) {
+                    try {
+                        applyOrientationToBoth(Prefs.coverRotationAuto(coverContext) ?
+                                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
+                                ActivityInfo.SCREEN_ORIENTATION_LOCKED);
+                    } catch (RuntimeException ex) {
+                        android.util.Log.w("FlipCoverRotation", "Restore orientation failed", ex);
+                    }
+                }
+                showRefreshResult(rotated[0]);
+                android.util.Log.i("FlipCoverRotation",
+                        "Refresh trial: display rotation " +
+                                (rotated[0] ? "changed" : "DID NOT CHANGE") +
+                                " (Reels layout cannot be inspected by this app)");
+            };
+            MAIN.postDelayed(completion, REFRESH_WAIT_MS);
         } catch (RuntimeException ex) {
-            refreshing = false;
-            setButtonFeedback(false);
-            android.util.Log.w("FlipCoverRotation", "Refresh rotation cycle failed", ex);
+            cancelRefresh();
+            if (isActive() && coverContext != null) {
+                try { applyOrientationToBoth(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR); }
+                catch (RuntimeException ignored) { }
+            }
+            showRefreshResult(false);
+            android.util.Log.w("FlipCoverRotation", "Rotation request rejected", ex);
         }
     }
 
-    /** Shows that the tap was received without claiming Instagram reflowed. */
-    private static void setButtonFeedback(boolean pending) {
+    private static void setButtonPending() {
         if (refreshButton == null) return;
-        refreshButton.setText(pending ? "···" : "⟳");
-        refreshButton.setAlpha(pending ? 0.60f : 1.0f);
+        refreshButton.setText("…");
+        refreshButton.setTextColor(Color.WHITE);
+        refreshButton.setAlpha(0.7f);
+        refreshButton.setContentDescription("Waiting for Android rotation");
+    }
+
+    /** Reports an observed display rotation, not assumed Instagram success. */
+    private static void showRefreshResult(boolean didRotate) {
+        if (refreshButton == null) return;
+        refreshButton.setText(didRotate ? "✓" : "!");
+        refreshButton.setTextColor(didRotate ? 0xFF86EFAC : 0xFFFCA5A5);
+        refreshButton.setAlpha(1.0f);
+        refreshButton.setContentDescription(didRotate ?
+                "Display rotated; Instagram's layout may still be unchanged" :
+                "Android did not rotate the cover display");
+        android.widget.Toast.makeText(coverContext, didRotate ?
+                "Display rotated. Instagram layout is app-controlled." :
+                "Samsung ignored the rotation request", android.widget.Toast.LENGTH_SHORT).show();
+        resetFeedback = () -> {
+            resetFeedback = null;
+            if (refreshButton == null) return;
+            refreshButton.setText("⟳");
+            refreshButton.setTextColor(Color.WHITE);
+            refreshButton.setContentDescription("Try cover rotation and verify the display changed");
+        };
+        MAIN.postDelayed(resetFeedback, RESULT_DURATION_MS);
     }
 
     @Override public void onCreate(Bundle state) {
