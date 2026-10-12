@@ -28,9 +28,14 @@ assert (root/"app/src/main/assets/third_party/CoverSpin-LICENSE.txt").exists()
 print("PASS: Play Protect-relevant sensitive permissions removed; cover rotation retained.")
 
 assert "REFRESH_WAIT_MS" in source
-assert "setButtonFeedback(true)" in source
+assert "applyOrientationToBoth(forced)" in source
 assert "SCREEN_ORIENTATION_PORTRAIT" in source
 assert "SCREEN_ORIENTATION_LANDSCAPE" in source
 assert "applyCoverImmersive()" in source
 assert "FLAG_LAYOUT_IN_SCREEN" in source
 print("PASS v0.7.2 refresh and cover-system-bar invariants")
+
+assert "DisplayManager.DisplayListener" in source
+assert "manager.registerDisplayListener(displayObserver, MAIN)" in source
+assert "showRefreshResult(rotated[0])" in source
+print("PASS v0.7.3: verified cover display rotation status rather than decorative animation")
