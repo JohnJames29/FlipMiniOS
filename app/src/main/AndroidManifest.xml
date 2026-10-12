@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <queries>
       <intent>
         <action android:name="android.intent.action.MAIN" />
@@ -13,14 +13,25 @@
     </queries>
     <application android:allowBackup="false" android:label="@string/app_name"
       android:theme="@style/AppTheme" android:usesCleartextTraffic="false">
-        <!-- Required by Shizuku: receives the server Binder when Flip Mini OS starts. -->
-        <provider android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
+        <meta-data android:name="com.samsung.android.icon_on_cover_screen" android:value="true" />
+        <activity android:name=".CoverRotationEngineActivity"
+            android:theme="@style/CoverEngineTheme"
+            android:exported="false"
+            android:taskAffinity="com.flipminios.launcher.rotation"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode">
+            <meta-data android:name="com.samsung.android.activity.rule" android:value="LAUNCH_COVER" />
+        </activity>
+        <service android:name=".CoverRotationAccessibilityService"
             android:enabled="true"
             android:exported="true"
-            android:multiprocess="false"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-        <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                android:resource="@xml/rotation_accessibility_config" />
+        </service>
         <activity android:name=".LauncherActivity" android:exported="true"
           android:screenOrientation="unspecified" android:resizeableActivity="true"
           android:configChanges="orientation|screenSize|smallestScreenSize|density|uiMode">
