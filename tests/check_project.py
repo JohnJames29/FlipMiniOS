@@ -14,7 +14,7 @@ prefs = (java_root / "Prefs.java").read_text()
 for p in [root / "app/src/main/AndroidManifest.xml", *(root / "app/src/main/res").rglob("*.xml")]:
     ET.parse(p)
 
-assert "versionName '0.7.2'" in gradle and "versionCode 10" in gradle
+assert "versionName '0.7.3'" in gradle and "versionCode 11" in gradle
 assert "dev.rikka.shizuku" not in gradle
 assert "ShizukuProvider" not in manifest
 assert "android.permission.INTERNET" not in manifest
@@ -62,7 +62,7 @@ assert "SCREEN_ORIENTATION_PORTRAIT" in engine
 assert "SCREEN_ORIENTATION_LANDSCAPE" in engine
 assert "SCREEN_ORIENTATION_FULL_SENSOR" in engine
 assert "REFRESH_WAIT_MS" in engine
-assert "setButtonFeedback(true)" in engine
+assert "applyOrientationToBoth(forced)" in engine
 assert "context instanceof Activity" in engine
 assert "installOverlay(context, cover)" in engine
 assert "FLAG_LAYOUT_IN_SCREEN" in engine
@@ -71,3 +71,17 @@ assert "applyCoverImmersive()" in launcher
 assert "onWindowFocusChanged" in launcher
 assert "controller.hide(WindowInsets.Type.systemBars())" in launcher
 print("PASS v0.7.2: refresh orientation cycle, gesture feedback, cover immersion and no transient cover activity")
+
+# v0.7.3: refresh uses both overlay windows and verifies Display.getRotation()
+# via DisplayManager listener. A tap alone can NEVER report rotation success.
+assert "applyOrientationToBoth(forced)" in engine
+assert "updateViewLayout(refreshButton, buttonParams)" in engine
+assert "updateViewLayout(rotationAnchor, anchorParams)" in engine
+assert "DisplayManager.DisplayListener" in engine
+assert "manager.registerDisplayListener(displayObserver, MAIN)" in engine
+assert "display.getRotation()" in engine
+assert "showRefreshResult(rotated[0])" in engine
+assert "Samsung ignored the rotation request" in engine
+assert "setButtonFeedback(true)" not in engine
+assert "REFRESH_WAIT_MS = 1700" in engine
+print("PASS v0.7.3: paired overlay orientation + actual physical display rotation observation")
