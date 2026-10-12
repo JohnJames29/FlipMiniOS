@@ -29,4 +29,11 @@ adb logcat -d >smoke-results/logcat.txt
 if grep -A 18 "FATAL EXCEPTION" smoke-results/logcat.txt | grep -q "Process: com.flipminios.launcher"; then
   echo "FAIL: launcher threw an uncaught exception"; exit 3;
 fi
-echo "PASS: launcher boots, stays alive, and navigates at 748x720, 340dpi without Shizuku installed."
+adb shell dumpsys package com.flipminios.launcher > smoke-results/package.txt
+if grep -Fq 'CoverRotationAccessibilityService' smoke-results/package.txt; then
+  echo "FAIL: old sideload-sensitive AccessibilityService still packaged"; exit 4
+fi
+if ! grep -Fq 'CoverRotationForegroundService' smoke-results/package.txt; then
+  echo "FAIL: replacement rotation wake helper is not packaged"; exit 5
+fi
+echo "PASS: v0.7.1 launcher boots, navigates, retains cover foreground rotation and contains no AccessibilityService."
