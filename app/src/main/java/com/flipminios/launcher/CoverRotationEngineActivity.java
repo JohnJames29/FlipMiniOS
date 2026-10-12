@@ -260,6 +260,9 @@ public final class CoverRotationEngineActivity extends Activity {
                 PixelFormat.TRANSLUCENT);
         p.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+        p.screenOrientation = Prefs.coverRotationAuto(context) ?
+                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
+                ActivityInfo.SCREEN_ORIENTATION_LOCKED;
         // Bottom-left avoids the right-hand engagement buttons on Reels,
         // and avoids the cameras located at the top of the cover.
         p.gravity = Gravity.BOTTOM | Gravity.START;
