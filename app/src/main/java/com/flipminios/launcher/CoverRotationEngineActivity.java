@@ -62,6 +62,23 @@ public final class CoverRotationEngineActivity extends Activity {
         }
     }
 
+    /**
+     * Foreground service safe path: attaches an external-display overlay directly.
+     * Does not attempt to start an activity from the background on Android 15+.
+     */
+    public static void ensureFromWake(Context context) {
+        if (!Prefs.coverRotationEnabled(context) || !Settings.canDrawOverlays(context)) return;
+        DisplayManager manager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        if (manager == null) return;
+        Display display = manager.getDisplay(1);
+        if (display == null || display.getState() != Display.STATE_ON) return;
+        if (isActive() && installedDisplayId == display.getDisplayId()) {
+            applyPreferences(context);
+            return;
+        }
+        installOverlay(context, display);
+    }
+
     /** Disables cover rotation overlay without affecting display configuration. */
     public static void stop() {
         removeButton();
@@ -132,12 +149,12 @@ public final class CoverRotationEngineActivity extends Activity {
             finish();
             return;
         }
-        installOverlay(display);
+        installOverlay(this, display);
         finish();
         overridePendingTransition(0, 0);
     }
 
-    private void installOverlay(Display display) {
+    private static void installOverlay(Context context, Display display) {
         stop();
         coverContext = getApplicationContext().createDisplayContext(display);
         overlayManager = (WindowManager) coverContext.getSystemService(WINDOW_SERVICE);
@@ -150,7 +167,7 @@ public final class CoverRotationEngineActivity extends Activity {
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         p.gravity = Gravity.TOP | Gravity.START;
-        p.screenOrientation = Prefs.coverRotationAuto(this) ?
+        p.screenOrientation = Prefs.coverRotationAuto(context) ?
                 ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
                 ActivityInfo.SCREEN_ORIENTATION_LOCKED;
         try {
