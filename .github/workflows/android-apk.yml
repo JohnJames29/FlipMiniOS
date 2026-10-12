@@ -35,13 +35,15 @@ jobs:
           java -cp /tmp/flip-syntax ParseJava app/src/main/java
       - name: Compile debug APK
         run: gradle --no-daemon :app:assembleDebug
-      - name: Verify packaged Shizuku Binder provider
+      - name: Verify embedded cover rotation components
         run: |
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           "$AAPT" dump xmltree app/build/outputs/apk/debug/app-debug.apk AndroidManifest.xml > /tmp/flip-manifest.txt
-          grep -Fq 'rikka.shizuku.ShizukuProvider' /tmp/flip-manifest.txt
-          grep -Fq 'com.flipminios.launcher.shizuku' /tmp/flip-manifest.txt
-          grep -Fq 'android.permission.INTERACT_ACROSS_USERS_FULL' /tmp/flip-manifest.txt
+          grep -Fq 'CoverRotationEngineActivity' /tmp/flip-manifest.txt
+          grep -Fq 'CoverRotationAccessibilityService' /tmp/flip-manifest.txt
+          grep -Fq 'android.permission.SYSTEM_ALERT_WINDOW' /tmp/flip-manifest.txt
+          ! grep -Fq 'rikka.shizuku.ShizukuProvider' /tmp/flip-manifest.txt
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -Fq 'assets/third_party/CoverSpin-LICENSE.txt'
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:
