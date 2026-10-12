@@ -23,6 +23,8 @@ final class Prefs {
     static void setCoverRotationEnabled(Context c, boolean enabled) { store(c).edit().putBoolean("cover_rotation_enabled", enabled).apply(); }
     static boolean coverRotationAuto(Context c) { return store(c).getBoolean("cover_rotation_auto", true); }
     static void setCoverRotationAuto(Context c, boolean auto) { store(c).edit().putBoolean("cover_rotation_auto", auto).apply(); }
+    static boolean coverRotationKeepAlive(Context c) { return store(c).getBoolean("cover_rotation_keep_alive", false); }
+    static void setCoverRotationKeepAlive(Context c, boolean enabled) { store(c).edit().putBoolean("cover_rotation_keep_alive", enabled).apply(); }
     static boolean coverRotationButton(Context c) { return store(c).getBoolean("cover_rotation_refresh_button", false); }
     static void setCoverRotationButton(Context c, boolean enabled) { store(c).edit().putBoolean("cover_rotation_refresh_button", enabled).apply(); }
     static boolean camerasOnRight(Context c) { return store(c).getBoolean("camera_right", false); }
