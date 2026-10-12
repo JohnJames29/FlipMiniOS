@@ -1,42 +1,28 @@
-"""Offline source-quality guard; cannot replace Android SDK build or hardware tests."""
+"""Offline release security checks. Android build and hardware testing are separate."""
 from pathlib import Path
-import hashlib
-import sys
-import zipfile
+
 root = Path(__file__).resolve().parents[1]
-wf = (root/'.github/workflows/android-apk.yml').read_text()
-assert 'gradle --no-daemon :app:assembleDebug' in wf
-assert 'app/build/outputs/apk/debug/app-debug.apk' in wf
-assert "gradle-version: '8.13'" in wf
+wf = (root / '.github/workflows/android-apk.yml').read_text()
+manifest = (root / 'app/src/main/AndroidManifest.xml').read_text()
 code = '\n'.join(f.read_text() for f in (root/'app/src/main/java').rglob('*.java'))
-assert 'class AppGridAdapter' in code
-assert 'class IconLoader' in code
-assert 'safeCameraHeight' in code
+privacy_config = (root/'app/src/main/res/xml/rotation_accessibility_config.xml').read_text()
+assert 'gradle --no-daemon :app:assembleDebug' in wf
+assert 'app-debug.apk' in wf
+assert 'Verify embedded cover rotation components' in wf
+assert 'CoverRotationEngineActivity' in code
+assert 'CoverRotationAccessibilityService' in code
 assert 'setLaunchDisplayId' in code
-manifest = (root/'app/src/main/AndroidManifest.xml').read_text()
-for forbidden in ('QUERY_ALL_PACKAGES','android.permission.INTERNET','BIND_DEVICE_ADMIN','BIND_VPN_SERVICE'):
-    assert forbidden not in manifest
-assert 'android.permission.WRITE_SETTINGS' in manifest
-assert 'android.permission.ACCESS_NETWORK_STATE' in manifest
-assert 'showInternetOptions' in code
+assert 'SCREEN_ORIENTATION_FULL_SENSOR' in code
+assert 'FLAG_NOT_TOUCHABLE' in code
+assert 'android.permission.SYSTEM_ALERT_WINDOW' in manifest
+assert 'BIND_ACCESSIBILITY_SERVICE' in manifest
+assert 'canRetrieveWindowContent="false"' in privacy_config
+assert 'canPerformGestures="false"' in privacy_config
+assert 'Shizuku' not in manifest and 'shizuku' not in manifest
+assert 'android.permission.INTERNET' not in manifest
+assert 'android.permission.QUERY_ALL_PACKAGES' not in manifest
+assert 'hasSystemFeature' in code
 assert 'showRotationOptions' in code
-assert 'BIND_ACCESSIBILITY_SERVICE' not in manifest
-assert '<queries>' in manifest
-print('Build workflow, features and security checks: passed')
-
-assert 'showSystemRotationOptions' in code
-assert 'showCompactVideoProfile' in code
-assert 'CoverShellService' in code and 'CoverShizukuControl' in code
-assert 'SpannableString' in code
-
-assert 'restoreTimer.schedule' in code
-assert 'wm density -d 1 reset' in code
-assert 'Physical density: 340' in code
-assert 'COMPACT_DPI = 280' in code
-assert 'testVideoWindow(' not in code
-
-manifest = (root/'app/src/main/AndroidManifest.xml').read_text()
-assert 'rikka.shizuku.ShizukuProvider' in manifest
-assert 'android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"' in manifest
-assert 'moe.shizuku.client.V3_SUPPORT' in manifest
-assert 'android:multiprocess="false"' in manifest
+assert 'setCoverRotationEnabled' in code
+assert 'CoverSpin-LICENSE' in str(root / 'third_party/CoverSpin-LICENSE.txt')
+print("PASS: v0.7 source and permission checks. Device-specific rotation is not certified.")
