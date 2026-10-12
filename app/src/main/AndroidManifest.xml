@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <queries>
       <intent>
         <action android:name="android.intent.action.MAIN" />
@@ -22,15 +25,12 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboardHidden|uiMode">
             <meta-data android:name="com.samsung.android.activity.rule" android:value="LAUNCH_COVER" />
         </activity>
-        <service android:name=".CoverRotationAccessibilityService"
+        <service android:name=".CoverRotationForegroundService"
             android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data android:name="android.accessibilityservice"
-                android:resource="@xml/rotation_accessibility_config" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated persistent cover-screen rotation overlay and screen wake restoration" />
         </service>
         <activity android:name=".LauncherActivity" android:exported="true"
           android:screenOrientation="unspecified" android:resizeableActivity="true"
