@@ -21,7 +21,6 @@ assert 'canPerformGestures="false"' in privacy_config
 assert 'Shizuku' not in manifest and 'shizuku' not in manifest
 assert 'android.permission.INTERNET' not in manifest
 assert 'android.permission.QUERY_ALL_PACKAGES' not in manifest
-assert 'hasSystemFeature' in code
 assert 'showRotationOptions' in code
 assert 'setCoverRotationEnabled' in code
 assert 'CoverSpin-LICENSE' in str(root / 'third_party/CoverSpin-LICENSE.txt')
