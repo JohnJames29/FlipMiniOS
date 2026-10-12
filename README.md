@@ -1,10 +1,10 @@
-# Flip Mini OS v0.7.1 · Safer CoverSpin-inspired rotation
+# Flip Mini OS v0.7.2 · Safer CoverSpin-inspired rotation
 
 Target: Samsung Galaxy Z Flip6 cover display, Android 16 / One UI 8.5.
 
 ## Installation-blocking fix
 
-v0.7.0 declared a BIND_ACCESSIBILITY_SERVICE-protected service to restart rotation after sleep. Google's Play Protect guidance explains that newly sideloaded apps using Accessibility are commonly blocked with the message "App blocked to protect your device." **v0.7.1 removes the Accessibility service entirely**, including the manifest registration and permission. No need to turn off Play Protect or Samsung Auto Blocker to try this build.
+v0.7.0 declared a BIND_ACCESSIBILITY_SERVICE-protected service to restart rotation after sleep. Google's Play Protect guidance explains that newly sideloaded apps using Accessibility are commonly blocked with the message "App blocked to protect your device." **v0.7.1+ removes the Accessibility service entirely**, including the manifest registration and permission. No need to turn off Play Protect or Samsung Auto Blocker to try this build.
 
 It is still possible for Play Protect to block a new, unsigned-reputation APK for another reason. This is not a guarantee of Play Protect approval.
 
@@ -28,6 +28,8 @@ It is still possible for Play Protect to block a new, unsigned-reputation APK fo
 5. Disable the separate CoverSpin rotation service to avoid two apps fighting over orientation.
 
 ## Limitations
+
+**v0.7.2 refresh:** The old refresh briefly set orientation to LOCKED, which did not necessarily rotate the display. The new refresh requests the opposite portrait/landscape layout class, waits 850 ms, then restores sensor rotation. The bubble briefly changes to "···" to acknowledge a tap. It is *not* a proven automatic Instagram Reel fix; app UI may still reset when swiping. The refresh action is only available in Auto mode. The cover launcher now requests full immersive system-bar handling again after rotation/focus; cover-screen status bars belonging to another app cannot be hidden by our launcher.
 
 The cover rotation feature's behavior on this exact Samsung firmware is not certified by generic emulator tests. Android foreground services may be interrupted or restricted. The original apps determine their own layouts: this update does not guarantee TikTok/Reels camera-safe controls or prevent Instagram from resetting layouts on a swipe.
 
