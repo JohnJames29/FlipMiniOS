@@ -19,6 +19,12 @@ final class Prefs {
     static void setCameraHeight(Context c, int height) { store(c).edit().putInt("camera_height_v4", Math.max(32, Math.min(84, height))).apply(); }
     static int rotationMode(Context c) { return Math.max(0, Math.min(2, store(c).getInt("rotation_mode", 0))); }
     static void setRotationMode(Context c, int mode) { store(c).edit().putInt("rotation_mode", Math.max(0, Math.min(2, mode))).apply(); }
+    static boolean coverRotationEnabled(Context c) { return store(c).getBoolean("cover_rotation_enabled", false); }
+    static void setCoverRotationEnabled(Context c, boolean enabled) { store(c).edit().putBoolean("cover_rotation_enabled", enabled).apply(); }
+    static boolean coverRotationAuto(Context c) { return store(c).getBoolean("cover_rotation_auto", true); }
+    static void setCoverRotationAuto(Context c, boolean auto) { store(c).edit().putBoolean("cover_rotation_auto", auto).apply(); }
+    static boolean coverRotationButton(Context c) { return store(c).getBoolean("cover_rotation_refresh_button", false); }
+    static void setCoverRotationButton(Context c, boolean enabled) { store(c).edit().putBoolean("cover_rotation_refresh_button", enabled).apply(); }
     static boolean camerasOnRight(Context c) { return store(c).getBoolean("camera_right", false); }
     static void setCamerasOnRight(Context c, boolean right) { store(c).edit().putBoolean("camera_right", right).apply(); }
     static int columns(Context c) { return store(c).getInt("columns", 3); }
