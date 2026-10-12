@@ -57,7 +57,6 @@ public final class LauncherActivity extends Activity {
     private final ExecutorService appQuery = Executors.newSingleThreadExecutor();
     private final Handler mainThread = new Handler(Looper.getMainLooper());
     private IconLoader iconLoader;
-    private CoverShizukuControl shizukuControl;
     private boolean querying = false;
     private long lastAppLoad = 0;
     private LinearLayout navBar;
@@ -78,7 +77,6 @@ public final class LauncherActivity extends Activity {
                     View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
         iconLoader = new IconLoader(this);
-        shizukuControl = new CoverShizukuControl(this);
         page = getIntent().getStringExtra("page") == null ? "home" : getIntent().getStringExtra("page");
         buildShell();
         showPage(page);
@@ -94,6 +92,9 @@ public final class LauncherActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         refreshAppsIfNeeded(false);
+        if (Prefs.coverRotationEnabled(this) && Settings.canDrawOverlays(this)) {
+            CoverRotationEngineActivity.startOnCover(this);
+        }
     }
     private void refreshAppsIfNeeded(boolean first) {
         if (querying || (!first && SystemClock.elapsedRealtime() - lastAppLoad < 180000L)) return;
@@ -113,7 +114,6 @@ public final class LauncherActivity extends Activity {
     @Override protected void onDestroy() {
         appQuery.shutdownNow();
         if (iconLoader != null) iconLoader.shutdown();
-        if (shizukuControl != null) shizukuControl.close();
         super.onDestroy();
     }
     @Override public void onNewIntent(Intent intent) {
@@ -495,23 +495,7 @@ public final class LauncherActivity extends Activity {
     }
     /** Local orientation, independent from opt-in system-wide rotation. */
     private void showRotationOptions() {
-        String[] modes = {"Auto (Flip Mini OS only)", "Portrait (Flip Mini OS only)",
-                "Landscape (Flip Mini OS only)", "System auto-rotate (other apps)"};
-        new AlertDialog.Builder(this)
-                .setTitle("Rotation")
-                .setItems(modes, (dialog, selected) -> {
-                    if (selected == 3) { showSystemRotationOptions(); return; }
-                    Prefs.setRotationMode(this, selected);
-                    int orientation = selected == 0 ? ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR :
-                            selected == 1 ? ActivityInfo.SCREEN_ORIENTATION_PORTRAIT :
-                            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-                    try {
-                        setRequestedOrientation(orientation);
-                        toast("Requested: " + modes[selected]);
-                    } catch (RuntimeException ex) {
-                        toast("Samsung blocked launcher rotation");
-                    }
-                }).setNegativeButton("Cancel", null).show();
+        showCoverRotationOptions();
     }
     private void showSystemRotationOptions() {
         boolean enabled = Settings.System.getInt(getContentResolver(),
@@ -549,66 +533,75 @@ public final class LauncherActivity extends Activity {
                 .show();
     }
     /**
-     * Uses Shizuku's shell identity to temporarily request a smaller UI scale
-     * on display 1. Never changes system resolution and always launches the
-     * original application through the normal Samsung cover display path.
+     * Transparent CoverSpin-derived orientation overlay. The permission is
+     * explicitly opt-in; without it, the launcher continues to work normally.
      */
-    private void showCompactVideoProfile(String packageName) {
-        if (!coverDisplay()) {
-            toast("Open this from your cover screen");
+    private void activateCoverRotation(boolean auto) {
+        Prefs.setCoverRotationEnabled(this, true);
+        Prefs.setCoverRotationAuto(this, auto);
+        if (!Settings.canDrawOverlays(this)) {
+            showCoverRotationPermissions();
             return;
         }
-        AppRepository.Entry entry = null;
-        for (AppRepository.Entry candidate : installed) {
-            if (packageName.equals(candidate.component.getPackageName())) {
-                entry = candidate;
-                break;
-            }
-        }
-        if (entry == null) {
-            toast("Native app not found; refresh your app list");
-            return;
-        }
-        final AppRepository.Entry originalApp = entry;
+        CoverRotationEngineActivity.startOnCover(this);
+        toast("Cover rotation enabled (" + (auto ? "Auto" : "Locked") + ")");
+        showPage("settings");
+    }
+
+    private void stopCoverRotation() {
+        Prefs.setCoverRotationEnabled(this, false);
+        CoverRotationEngineActivity.stop();
+        toast("Cover rotation helper disabled");
+        showPage("settings");
+    }
+
+    private void toggleCoverRefreshButton() {
+        boolean show = !Prefs.coverRotationButton(this);
+        Prefs.setCoverRotationButton(this, show);
+        CoverRotationEngineActivity.applyPreferences(this);
+        toast(show ? "Small rotation refresh bubble enabled" : "Refresh bubble hidden");
+        showPage("settings");
+    }
+
+    private void showCoverRotationPermissions() {
+        boolean allowed = Settings.canDrawOverlays(this);
         new AlertDialog.Builder(this)
-                .setTitle("Compact video mode · 90 seconds")
-                .setMessage("Experimental, rootless Shizuku option. It temporarily requests 280 dpi " +
-                        "only for the external display (your original is 340 dpi) to make the native " +
-                        "app's buttons potentially smaller. Your existing " + entry.name +
-                        " app, account and feed stay untouched.\n\n" +
-                        "The display is automatically reset after 90 seconds if the watchdog remains running. " +
-                        "Samsung may ignore the request or scale things incorrectly. " +
-                        "If the cover becomes misaligned, restore with aShell: wm density -d 1 reset.")
-                .setPositiveButton("Try compact mode", (dialog, which) -> {
-                    shizukuControl.execute(CoverShellService.COMPACT, response -> {
-                        if (response.startsWith("Compact cover density requested:")) {
-                            toast("Compact mode is temporary. Restores in 90 seconds.");
-                            launch(originalApp);
-                        } else {
-                            new AlertDialog.Builder(this)
-                                    .setTitle("No changes applied")
-                                    .setMessage(response)
-                                    .setPositiveButton("OK", null).show();
-                        }
-                    });
+                .setTitle("Cover rotation permissions")
+                .setMessage("Overlay access: " + (allowed ? "Allowed" : "Not allowed") +
+                        "\n\nThis uses a transparent 0×0 cover-display overlay to request " +
+                        "orientation changes, like CoverSpin. No root or Shizuku.\n\n" +
+                        "Optional Accessibility service: restarts the overlay after " +
+                        "screen unlock. It does not read screen contents or perform gestures.\n\n" +
+                        "Samsung may open permission screens on your damaged main display; " +
+                        "do not risk it if the screen is unusable. " +
+                        "Add Flip Mini OS to Good Lock → MultiStar cover apps.")
+                .setPositiveButton("Overlay permission", (d, w) -> {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + getPackageName()));
+                    safeSettings(intent);
                 })
-                .setNegativeButton("Cancel", null).show();
+                .setNeutralButton("Optional auto-start", (d, w) ->
+                        safeSettings(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                .setNegativeButton("Close", null)
+                .show();
     }
-    private void showDisplayStatus() {
-        shizukuControl.execute(CoverShellService.INSPECT, response ->
-                new AlertDialog.Builder(this)
-                        .setTitle("Cover display status")
-                        .setMessage(response)
-                        .setPositiveButton("OK", null).show());
+
+    private void showCoverRotationOptions() {
+        String[] entries = {"Auto-rotate cover (sensor)", "Lock cover rotation",
+                "Show/hide manual refresh bubble", "Stop cover rotation",
+                "Permissions and optional auto-start"};
+        new AlertDialog.Builder(this).setTitle("CoverSpin rotation engine")
+                .setItems(entries, (d, choice) -> {
+                    switch (choice) {
+                        case 0: activateCoverRotation(true); break;
+                        case 1: activateCoverRotation(false); break;
+                        case 2: toggleCoverRefreshButton(); break;
+                        case 3: stopCoverRotation(); break;
+                        default: showCoverRotationPermissions(); break;
+                    }
+                }).setNegativeButton("Close", null).show();
     }
-    private void restoreCoverDensity() {
-        shizukuControl.execute(CoverShellService.RESTORE, response ->
-                new AlertDialog.Builder(this)
-                        .setTitle("Reset cover display")
-                        .setMessage(response + "\n\nOriginal density: 340 dpi, resolution: 748×720. " +
-                                "If Shizuku is unavailable, use aShell You: wm density -d 1 reset")
-                        .setPositiveButton("OK", null).show());
-    }
+
     private void showSettings() {
         LinearLayout column = pageColumn();
         scrolling(column);
@@ -676,30 +669,35 @@ public final class LauncherActivity extends Activity {
             toast("Refreshing in background");
         }), Ui.lp(this, -1, 45));
         addSpace(column, 15);
-        column.addView(heading("Advanced cover video (Shizuku)"));
+        column.addView(heading("Cover rotation · no Shizuku"));
         column.addView(Ui.text(this,
-                "Optional, temporary compact display scale for the ORIGINAL TikTok and Instagram. " +
-                "No root. Restores after 90 seconds. May not fix app-controlled clipping.",
+                "CoverSpin-inspired sensor rotation for your ORIGINAL apps. " +
+                "Uses an opt-in transparent overlay, not shell commands. " +
+                "Optional accessibility only restarts it after screen wake.",
                 12, false, Ui.MUTED));
-        addSpace(column, 6);
-        column.addView(Ui.pill(this, "Compact TikTok · 90 sec",
-                () -> showCompactVideoProfile("com.zhiliaoapp.musically")), Ui.lp(this, -1, 40));
+        addSpace(column, 7);
+        column.addView(Ui.pill(this, "Auto-rotate cover",
+                () -> activateCoverRotation(true)), Ui.lp(this, -1, 44));
         addSpace(column, 5);
-        column.addView(Ui.pill(this, "Compact Instagram · 90 sec",
-                () -> showCompactVideoProfile("com.instagram.android")), Ui.lp(this, -1, 40));
+        column.addView(Ui.pill(this, "Lock cover orientation",
+                () -> activateCoverRotation(false)), Ui.lp(this, -1, 44));
         addSpace(column, 5);
-        column.addView(Ui.pill(this, "Display status (read only)", this::showDisplayStatus),
-                Ui.lp(this, -1, 40));
+        column.addView(Ui.pill(this, "Show/hide refresh bubble",
+                this::toggleCoverRefreshButton), Ui.lp(this, -1, 44));
         addSpace(column, 5);
-        column.addView(Ui.pill(this, "Restore normal 340 dpi", this::restoreCoverDensity),
-                Ui.lp(this, -1, 40));
+        column.addView(Ui.pill(this, "Stop cover rotation",
+                this::stopCoverRotation), Ui.lp(this, -1, 44));
+        addSpace(column, 5);
+        column.addView(Ui.pill(this, "Permissions & optional auto-start",
+                this::showCoverRotationPermissions), Ui.lp(this, -1, 44));
         addSpace(column, 12);
         column.addView(heading("App compatibility"));
         column.addView(Ui.text(this,
-                "The new compact video mode asks Shizuku to adjust only the cover display DPI temporarily. It cannot move controls drawn inside TikTok or Instagram; Samsung may still clip them.",
+                "TikTok may preserve its layout with cover rotation. Instagram may reset after each Reel. " +
+                "The optional refresh bubble briefly reapplies orientation, but fixing native cropping is not guaranteed.",
                 12, false, Ui.MUTED));
         addSpace(column, 10);
-        column.addView(Ui.text(this, "V0.6 • Rootless • Automatic DPI rollback • Original apps", 11, false, Ui.PRIMARY));
+        column.addView(Ui.text(this, "V0.7 • CoverSpin rotation • No Shizuku • Original apps", 11, false, Ui.PRIMARY));
     }
     private void moveTile(String tile, int change) {
         List<String> next = Prefs.tiles(this);
