@@ -14,7 +14,7 @@ prefs = (java_root / "Prefs.java").read_text()
 for p in [root / "app/src/main/AndroidManifest.xml", *(root / "app/src/main/res").rglob("*.xml")]:
     ET.parse(p)
 
-assert "versionName '0.7.1'" in gradle and "versionCode 9" in gradle
+assert "versionName '0.7.2'" in gradle and "versionCode 10" in gradle
 assert "dev.rikka.shizuku" not in gradle
 assert "ShizukuProvider" not in manifest
 assert "android.permission.INTERNET" not in manifest
@@ -56,3 +56,18 @@ assert (root / "third_party/CoverSpin-LICENSE.txt").exists()
 assert (root / "app/src/main/assets/third_party/CoverSpin-LICENSE.txt").exists()
 assert (root / "app/src/main/res/xml/cover_widget_info.xml").exists()
 print("PASS v0.7.1: no Accessibility, rootless rotation overlay, notification-backed wake, original app launcher")
+
+# The old refresh only toggled LOCKED, which may not rotate at all.
+assert "SCREEN_ORIENTATION_PORTRAIT" in engine
+assert "SCREEN_ORIENTATION_LANDSCAPE" in engine
+assert "SCREEN_ORIENTATION_FULL_SENSOR" in engine
+assert "REFRESH_WAIT_MS" in engine
+assert "setButtonFeedback(true)" in engine
+assert "context instanceof Activity" in engine
+assert "installOverlay(context, cover)" in engine
+assert "FLAG_LAYOUT_IN_SCREEN" in engine
+assert "LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS" in engine
+assert "applyCoverImmersive()" in launcher
+assert "onWindowFocusChanged" in launcher
+assert "controller.hide(WindowInsets.Type.systemBars())" in launcher
+print("PASS v0.7.2: refresh orientation cycle, gesture feedback, cover immersion and no transient cover activity")
