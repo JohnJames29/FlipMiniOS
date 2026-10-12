@@ -156,7 +156,7 @@ public final class CoverRotationEngineActivity extends Activity {
 
     private static void installOverlay(Context context, Display display) {
         stop();
-        coverContext = getApplicationContext().createDisplayContext(display);
+        coverContext = context.getApplicationContext().createDisplayContext(display);
         overlayManager = (WindowManager) coverContext.getSystemService(WINDOW_SERVICE);
         if (overlayManager == null) return;
         View anchor = new View(coverContext);
@@ -175,7 +175,7 @@ public final class CoverRotationEngineActivity extends Activity {
             rotationAnchor = anchor;
             installedDisplayId = display.getDisplayId();
             attached = true;
-            showButtonIfEnabled(this);
+            showButtonIfEnabled(context);
         } catch (RuntimeException ex) {
             stop();
             android.util.Log.w("FlipCoverRotation", "Cover overlay rejected", ex);
